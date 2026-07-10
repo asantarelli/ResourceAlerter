@@ -1,0 +1,99 @@
+using System.Net;
+using System.Net.Mail;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using ResourceAlerter.Configuration;
+
+namespace ResourceAlerter.Alerting;
+
+/// <summary>
+/// Sends alert mail via SMTP with retry/backoff. A send that ultimately fails is logged
+/// locally and swallowed — mail delivery problems must never bring the service down.
+/// </summary>
+public sealed class SmtpAlertSender : IAlertSender
+{
+    private readonly SmtpOptions _options;
+    private readonly ILogger<SmtpAlertSender> _logger;
+
+    public SmtpAlertSender(IOptions<SmtpOptions> options, ILogger<SmtpAlertSender> logger)
+    {
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public async Task SendAsync(AlertMessage message, CancellationToken cancellationToken)
+    {
+        if (_options.Recipients.Count == 0)
+        {
+            _logger.LogWarning("No SMTP recipients configured; dropping alert '{Subject}'", message.Subject);
+            return;
+        }
+
+        for (var attempt = 1; attempt <= Math.Max(1, _options.RetryCount); attempt++)
+        {
+            try
+            {
+                await SendOnceAsync(message, cancellationToken);
+                _logger.LogInformation("Alert mail sent: {Subject}", message.Subject);
+                return;
+            }
+            catch (Exception ex) when (attempt < _options.RetryCount)
+            {
+                var delay = TimeSpan.FromSeconds(_options.RetryBackoffSeconds * attempt);
+                _logger.LogWarning(ex,
+                    "Failed to send alert mail (attempt {Attempt}/{Max}): {Subject}. Retrying in {Delay}s.",
+                    attempt, _options.RetryCount, message.Subject, delay.TotalSeconds);
+                try
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to send alert mail after {Attempts} attempts: {Subject}. Giving up.",
+                    attempt, message.Subject);
+                return;
+            }
+        }
+    }
+
+    private async Task SendOnceAsync(AlertMessage message, CancellationToken cancellationToken)
+    {
+        using var client = new SmtpClient(_options.Host, _options.Port)
+        {
+            EnableSsl = _options.UseSsl,
+            Timeout = _options.TimeoutMilliseconds,
+        };
+
+        if (_options.RequiresAuthentication)
+        {
+            client.Credentials = new NetworkCredential(_options.Username, _options.Password);
+        }
+        else
+        {
+            client.UseDefaultCredentials = false;
+        }
+
+        using var mail = new MailMessage
+        {
+            From = new MailAddress(_options.FromAddress, _options.FromDisplayName),
+            Subject = message.Subject,
+            Body = message.Body,
+            IsBodyHtml = false,
+        };
+
+        foreach (var recipient in _options.Recipients)
+        {
+            mail.To.Add(recipient);
+        }
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(_options.TimeoutMilliseconds);
+        await client.SendMailAsync(mail, cts.Token);
+    }
+}

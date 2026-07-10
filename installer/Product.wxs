@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ResourceAlerter MSI installer source.
+
+  Build with installer\build-installer.ps1, which publishes the app and invokes `wix build`
+  with the right defines. The install path is intentionally fixed (not user-choosable) so a
+  fleet of servers ends up with a predictable, scriptable layout.
+
+  appsettings.json is only installed if it doesn't already exist at the target path (see the
+  AppSearch/Condition below) — this makes upgrades safe: re-running the installer over an
+  existing install never clobbers a server's already-tuned SMTP/threshold configuration.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="ResourceAlerter"
+           Manufacturer="SDigitales"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="9B72D56B-00E8-4B68-B79B-AD85E2A70C65"
+           Language="1033"
+           Codepage="1252"
+           InstallerVersion="500"
+           Scope="perMachine">
+
+    <SummaryInformation Description="ResourceAlerter - Server Health Monitor Setup" Manufacturer="SDigitales" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ResourceAlerter is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Fixed, predictable path across the whole server fleet. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ResourceAlerter" />
+    </StandardDirectory>
+
+    <!-- Detects a pre-existing appsettings.json at the target path before anything is installed. -->
+    <Property Id="APPSETTINGSJSONEXISTS" Secure="no">
+      <DirectorySearch Id="InstallDirSearch" Path="[INSTALLFOLDER]" Depth="0">
+        <FileSearch Id="AppSettingsFileSearch" Name="appsettings.json" />
+      </DirectorySearch>
+    </Property>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+      <Component Id="MainExecutable" Guid="6F1C9C3A-6E8B-4B7C-9E3B-1A2B3C4D5E6F">
+        <File Id="ResourceAlerterExe" Source="$(var.PublishDir)\ResourceAlerter.exe" KeyPath="yes" />
+
+        <ServiceInstall Id="ResourceAlerterServiceInstall"
+                         Name="ResourceAlerter"
+                         DisplayName="ResourceAlerter - Server Health Monitor"
+                         Description="Monitors CPU, memory, temperature, PSU voltages, disk space and network connectivity, and e-mails alerts. No external monitoring infrastructure required."
+                         Type="ownProcess"
+                         Start="auto"
+                         ErrorControl="normal"
+                         Account="LocalSystem" />
+
+        <!-- The MSI ServiceInstall table has no "delayed auto-start" concept; the SCM reads
+             it from this registry value, so it's set directly (same effect as install.ps1's
+             `sc.exe config ... start= delayed-auto`). -->
+        <RegistryValue Root="HKLM"
+                        Key="SYSTEM\CurrentControlSet\Services\ResourceAlerter"
+                        Name="DelayedAutostart"
+                        Type="integer"
+                        Value="1" />
+
+        <ServiceControl Id="ResourceAlerterServiceControl"
+                         Name="ResourceAlerter"
+                         Start="install"
+                         Stop="both"
+                         Remove="uninstall"
+                         Wait="yes" />
+      </Component>
+
+      <!-- Only installed on a fresh install; an upgrade over an existing install leaves the
+           admin's already-configured appsettings.json untouched. -->
+      <Component Id="AppSettingsJson" Guid="2D4E6F8A-1B3C-4D5E-8F7A-9B0C1D2E3F4A" Condition="NOT APPSETTINGSJSONEXISTS">
+        <File Id="AppSettingsJsonFile" Source="$(var.PublishDir)\appsettings.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="MonoPosixHelperDll" Guid="3E5F7A9B-2C4D-4E5F-9A8B-0C1D2E3F4A5B">
+        <File Id="MonoPosixHelperDllFile" Source="$(var.PublishDir)\MonoPosixHelper.dll" KeyPath="yes" />
+      </Component>
+
+      <Component Id="LibMonoPosixHelperDll" Guid="4F6A8B0C-3D5E-4F6A-8B9C-1D2E3F4A5B6C">
+        <File Id="LibMonoPosixHelperDllFile" Source="$(var.PublishDir)\libMonoPosixHelper.dll" KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="ResourceAlerter" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    <ui:WixUI Id="WixUI_Minimal" />
+
+  </Package>
+</Wix>
