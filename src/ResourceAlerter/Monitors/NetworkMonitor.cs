@@ -79,6 +79,8 @@ public sealed class NetworkMonitor : IHealthMonitor
             InRange = !_currentlyOutOfRange,
             DisplayValue = $"{losses}/{_window.Count} losses in window" +
                             (outageDuration > TimeSpan.Zero ? $", outage {outageDuration.TotalSeconds:F0}s" : ""),
+            NumericValue = losses,
+            Unit = $"losses/{_options.WindowSize}",
             DisplayThreshold = $">{_options.MaxLossesInWindow} losses/{_options.WindowSize} or >{_options.MaxConsecutiveOutageSeconds}s outage",
         };
     }

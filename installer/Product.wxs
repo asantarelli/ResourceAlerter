@@ -33,6 +33,8 @@
       <Directory Id="INSTALLFOLDER" Name="ResourceAlerter" />
     </StandardDirectory>
 
+    <StandardDirectory Id="DesktopFolder" />
+
     <!-- Detects a pre-existing appsettings.json at the target path before anything is installed. -->
     <Property Id="APPSETTINGSJSONEXISTS" Secure="no">
       <DirectorySearch Id="InstallDirSearch" Path="[INSTALLFOLDER]" Depth="0">
@@ -75,6 +77,18 @@
            admin's already-configured appsettings.json untouched. -->
       <Component Id="AppSettingsJson" Guid="2D4E6F8A-1B3C-4D5E-8F7A-9B0C1D2E3F4A" Condition="NOT APPSETTINGSJSONEXISTS">
         <File Id="AppSettingsJsonFile" Source="$(var.PublishDir)\appsettings.json" KeyPath="yes" />
+      </Component>
+
+      <!-- Viewer app (charts over the recorded data), with a desktop shortcut for all users. -->
+      <Component Id="ViewerExecutable" Guid="5A7B9C1D-4E6F-4A7B-9C8D-2E3F4A5B6C7D">
+        <File Id="ViewerExe" Source="$(var.ViewerPublishDir)\ResourceAlerterViewer.exe" KeyPath="yes">
+          <Shortcut Id="ViewerDesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="ResourceAlerter Viewer"
+                    Description="View recorded server health data and alert history"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="yes" />
+        </File>
       </Component>
 
       <Component Id="MonoPosixHelperDll" Guid="3E5F7A9B-2C4D-4E5F-9A8B-0C1D2E3F4A5B">

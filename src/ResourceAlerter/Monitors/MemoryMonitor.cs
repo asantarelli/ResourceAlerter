@@ -73,6 +73,8 @@ public sealed class MemoryMonitor : IHealthMonitor
                     Subject = "Physical RAM",
                     InRange = inRange,
                     DisplayValue = $"{usedPercent:F1}% used ({FormatBytes(total - available)} / {FormatBytes(total)})",
+                    NumericValue = usedPercent,
+                    Unit = "% used",
                     DisplayThreshold = $"{_options.AlertThresholdPercent}% (recovery below {_options.RecoveryThresholdPercent}%)",
                 },
             };

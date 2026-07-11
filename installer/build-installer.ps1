@@ -27,7 +27,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repoRoot "src\ResourceAlerter\ResourceAlerter.csproj"
+$viewerProjectPath = Join-Path $repoRoot "src\ResourceAlerter.Viewer\ResourceAlerter.Viewer.csproj"
 $publishDir = Join-Path $repoRoot "publish\ResourceAlerter"
+$viewerPublishDir = Join-Path $repoRoot "publish\Viewer"
 $outputDir = Join-Path $PSScriptRoot "bin"
 $msiPath = Join-Path $outputDir "ResourceAlerterSetup-$Version.msi"
 
@@ -48,7 +50,21 @@ dotnet publish $projectPath `
     -p:PublishReadyToRun=false `
     -p:Version=$Version `
     -o $publishDir
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish (service) failed." }
+
+Write-Host "Publishing Viewer..."
+if (Test-Path $viewerPublishDir) {
+    Remove-Item $viewerPublishDir -Recurse -Force
+}
+dotnet publish $viewerProjectPath `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    -p:PublishSingleFile=true `
+    -p:PublishReadyToRun=false `
+    -p:Version=$Version `
+    -o $viewerPublishDir
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish (viewer) failed." }
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
@@ -57,6 +73,7 @@ wix build (Join-Path $PSScriptRoot "Product.wxs") `
     -arch x64 `
     -ext WixToolset.UI.wixext `
     -d "PublishDir=$publishDir" `
+    -d "ViewerPublishDir=$viewerPublishDir" `
     -d "ProductVersion=$Version" `
     -o $msiPath
 if ($LASTEXITCODE -ne 0) { throw "wix build failed." }

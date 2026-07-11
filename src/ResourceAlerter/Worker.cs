@@ -4,7 +4,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Alerting;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Data;
 using ResourceAlerter.Monitors;
+using ResourceAlerter.Reporting;
 
 namespace ResourceAlerter;
 
@@ -19,27 +21,35 @@ public sealed class Worker : BackgroundService
     private readonly IEnumerable<IHealthMonitor> _monitors;
     private readonly MonitoringOptions _options;
     private readonly IAlertSender _alertSender;
+    private readonly DataRecorder _dataRecorder;
+    private readonly DailySummaryService _dailySummary;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<Worker> _logger;
     private readonly string _machineName;
     private readonly Dictionary<string, AlertStateTracker> _trackers = new(StringComparer.OrdinalIgnoreCase);
+    private DateTime _nextSummaryAt;
 
     public Worker(
         IEnumerable<IHealthMonitor> monitors,
         IOptions<MonitoringOptions> options,
         IOptions<GeneralOptions> generalOptions,
         IAlertSender alertSender,
+        DataRecorder dataRecorder,
+        DailySummaryService dailySummary,
         ILoggerFactory loggerFactory,
         ILogger<Worker> logger)
     {
         _monitors = monitors;
         _options = options.Value;
         _alertSender = alertSender;
+        _dataRecorder = dataRecorder;
+        _dailySummary = dailySummary;
         _loggerFactory = loggerFactory;
         _logger = logger;
         _machineName = string.IsNullOrWhiteSpace(generalOptions.Value.MachineName)
             ? Environment.MachineName
             : generalOptions.Value.MachineName;
+        _nextSummaryAt = DateTime.Today.AddDays(1); // next local midnight
 
         foreach (var monitor in _monitors)
         {
@@ -48,6 +58,7 @@ public sealed class Worker : BackgroundService
                 _machineName,
                 monitor.Options,
                 _alertSender,
+                _dataRecorder,
                 _loggerFactory.CreateLogger($"ResourceAlerter.Alerting.{monitor.Name}"));
         }
     }
@@ -105,6 +116,9 @@ public sealed class Worker : BackgroundService
 
     private async Task ProcessCycleAsync(List<(IHealthMonitor Monitor, IReadOnlyList<MonitorResult> Results)> cycle, CancellationToken stoppingToken)
     {
+        var now = DateTimeOffset.UtcNow;
+        var samples = new List<SampleRecord>();
+
         foreach (var (monitor, results) in cycle)
         {
             if (!_trackers.TryGetValue(monitor.Name, out var tracker))
@@ -114,6 +128,11 @@ public sealed class Worker : BackgroundService
 
             foreach (var result in results)
             {
+                if (!result.Unavailable && result.NumericValue is not null)
+                {
+                    samples.Add(new SampleRecord(monitor.Name, result.Subject, result.NumericValue.Value, result.Unit));
+                }
+
                 try
                 {
                     await tracker.ProcessAsync(result, stoppingToken);
@@ -123,6 +142,27 @@ public sealed class Worker : BackgroundService
                     _logger.LogError(ex, "Failed processing alert state for {Monitor}/{Subject}", monitor.Name, result.Subject);
                 }
             }
+        }
+
+        _dataRecorder.RecordSamples(samples, now);
+        await SendDailySummaryIfDueAsync(stoppingToken);
+    }
+
+    private async Task SendDailySummaryIfDueAsync(CancellationToken stoppingToken)
+    {
+        if (DateTime.Now < _nextSummaryAt)
+        {
+            return;
+        }
+
+        _nextSummaryAt = DateTime.Today.AddDays(1);
+        try
+        {
+            await _dailySummary.SendAsync(DateTimeOffset.Now, stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to build/send the daily summary mail");
         }
     }
 

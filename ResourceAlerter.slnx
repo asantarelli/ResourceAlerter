@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ResourceAlerter.Viewer/ResourceAlerter.Viewer.csproj" />
     <Project Path="src/ResourceAlerter/ResourceAlerter.csproj" />
   </Folder>
 </Solution>

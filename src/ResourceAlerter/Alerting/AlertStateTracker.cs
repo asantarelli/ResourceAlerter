@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Data;
 using ResourceAlerter.Monitors;
 
 namespace ResourceAlerter.Alerting;
@@ -41,16 +42,18 @@ public sealed class AlertStateTracker
     private readonly string _machineName;
     private readonly MonitorOptionsBase _options;
     private readonly IAlertSender _alertSender;
+    private readonly DataRecorder? _dataRecorder;
     private readonly ILogger _logger;
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
 
-    public AlertStateTracker(string monitorName, string machineName, MonitorOptionsBase options, IAlertSender alertSender, ILogger logger)
+    public AlertStateTracker(string monitorName, string machineName, MonitorOptionsBase options, IAlertSender alertSender, DataRecorder? dataRecorder, ILogger logger)
     {
         _monitorName = monitorName;
         _machineName = machineName;
         _options = options;
         _alertSender = alertSender;
+        _dataRecorder = dataRecorder;
         _logger = logger;
     }
 
@@ -125,6 +128,7 @@ public sealed class AlertStateTracker
                 if (entry.InRangeSince is not null &&
                     now - entry.InRangeSince.Value >= TimeSpan.FromSeconds(_options.RecoveryWindowSeconds))
                 {
+                    _dataRecorder?.RecordAlertResolved(_monitorName, result.Subject, now);
                     await SendResolvedAsync(result, entry, now, cancellationToken);
                     entry.State = State.Normal;
                     entry.EventStartedAt = null;
@@ -158,6 +162,7 @@ public sealed class AlertStateTracker
                     entry.State = State.Active;
                     entry.EventStartedAt = now;
                     entry.LastReminderSentAt = now;
+                    _dataRecorder?.RecordAlertStart(_monitorName, result.Subject, now, result.DisplayValue, result.DisplayThreshold);
                     await SendTriggeredAsync(result, entry, now, cancellationToken);
                 }
                 break;

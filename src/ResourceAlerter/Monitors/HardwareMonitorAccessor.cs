@@ -39,6 +39,48 @@ public sealed class HardwareMonitorAccessor : IDisposable
         }
     }
 
+    /// <summary>
+    /// Dumps every sensor of every type (temperature, voltage, fan, load, clock, ...) with its
+    /// current value. Used by the daily summary mail so the admin can see exactly what each
+    /// machine's hardware exposes and plan which sensors to support next.
+    /// </summary>
+    public IReadOnlyList<string> DescribeAllSensors()
+    {
+        if (!_opened)
+        {
+            return new[] { "(LibreHardwareMonitor unavailable on this machine — no sensors to list)" };
+        }
+
+        var lines = new List<string>();
+        try
+        {
+            foreach (var hardware in _computer.Hardware)
+            {
+                UpdateRecursive(hardware);
+                DescribeRecursive(hardware, lines);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate sensors for the daily summary");
+            lines.Add($"(sensor enumeration failed: {ex.Message})");
+        }
+        return lines;
+    }
+
+    private static void DescribeRecursive(IHardware hardware, List<string> lines)
+    {
+        foreach (var sensor in hardware.Sensors)
+        {
+            var value = sensor.Value.HasValue ? sensor.Value.Value.ToString("F3") : "n/a";
+            lines.Add($"[{hardware.HardwareType}] {hardware.Name} | {sensor.SensorType} | '{sensor.Name}' = {value}");
+        }
+        foreach (var sub in hardware.SubHardware)
+        {
+            DescribeRecursive(sub, lines);
+        }
+    }
+
     public IReadOnlyList<(IHardware Hardware, ISensor Sensor)> GetSensors(SensorType type)
     {
         if (!_opened)

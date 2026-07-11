@@ -68,6 +68,8 @@ public sealed class VoltageMonitor : IHealthMonitor
                 Subject = railName,
                 InRange = !isOut,
                 DisplayValue = $"{value:F2}V ({deviation:P1} off nominal)",
+                NumericValue = value,
+                Unit = "V",
                 DisplayThreshold = $"{nominal}V ±{_options.AllowedDeviationFraction:P0}",
             });
         }

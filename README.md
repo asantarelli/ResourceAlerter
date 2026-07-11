@@ -24,6 +24,18 @@ for sensors.
   signal that the box rebooted. It also lists exactly what's being actively monitored (with
   each threshold) and what got skipped on this particular machine, so you know your actual
   sensor coverage without having to dig through logs.
+- **Every reading is recorded** to a local SQLite database
+  (`%ProgramData%\ResourceAlerter\resourcealerter.db` by default, retention configurable,
+  default 90 days), along with every alert event (start/resolution).
+- **A daily summary mail goes out at 00:00** with: the last 24 hours' alert list (with
+  durations), one JPG chart per monitored variable (red vertical lines mark alert starts),
+  the day's log file(s) attached, and a dump of every hardware sensor the machine exposes —
+  useful for planning which sensors to support next. Test it anytime with
+  `ResourceAlerter.exe --send-summary`.
+- **A companion Viewer app** (`ResourceAlerterViewer.exe`, desktop shortcut installed by the
+  MSI) shows the current/last value of any recorded variable plus its 24-hour area chart,
+  with the same red alert markers. It reads the same SQLite database directly; no elevation
+  needed.
 - Everything is also written to a local rotating log file (`logs/`) so you can diagnose
   without depending on mail delivery.
 - If a temperature/voltage sensor isn't exposed by the hardware (or a PSU rail's sensor name
@@ -37,14 +49,20 @@ for sensors.
 ```
 src/ResourceAlerter/
   Program.cs                    Host/DI wiring, Windows Service registration
-  Worker.cs                     The central polling loop
+  Worker.cs                     The central polling loop + daily summary scheduling
   Configuration/                Strongly-typed appsettings.json sections
   Monitors/                     One IHealthMonitor implementation per check
   Alerting/                     AlertStateTracker (anti-spam) + SMTP sender
+  Data/                         SQLite recording (samples + alert events)
+  Reporting/                    Daily summary mail + headless chart rendering
   Logging/                      Rotating file logger provider
   appsettings.json              Example/default configuration
+src/ResourceAlerter.Viewer/     WinForms viewer app (24h charts over the recorded data)
 scripts/
   install.ps1 / uninstall.ps1   Register/remove the Windows service
+installer/
+  Product.wxs                   WiX v5 MSI (service + viewer + desktop shortcut)
+  build-installer.ps1           Publishes both apps and builds the MSI
 ```
 
 ## Build
@@ -95,6 +113,11 @@ wins). At minimum, set:
 
 All thresholds, sustained/recovery windows, reminder interval, and polling interval are
 configurable per monitor — see the comments (`"//"` keys) in `appsettings.json`.
+
+Data recording is configured under `Database` (`Path`, default
+`%ProgramData%\ResourceAlerter\resourcealerter.db`, and `RetentionDays`, default 90). The
+service grants `BUILTIN\Users` modify rights on the data directory at startup so the Viewer
+can read the WAL-mode database without elevation.
 
 ## Install via MSI (recommended for rolling out to multiple servers)
 

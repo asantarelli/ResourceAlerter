@@ -69,6 +69,8 @@ public sealed class TemperatureMonitor : IHealthMonitor
                 Subject = subject,
                 InRange = !_currentlyOutOfRange,
                 DisplayValue = $"{value:F1}°C",
+                NumericValue = value,
+                Unit = "°C",
                 DisplayThreshold = $"{threshold:F0}°C",
             },
         };

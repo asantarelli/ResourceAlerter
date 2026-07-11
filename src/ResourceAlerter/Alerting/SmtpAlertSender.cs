@@ -92,8 +92,20 @@ public sealed class SmtpAlertSender : IAlertSender
             mail.To.Add(recipient);
         }
 
+        foreach (var attachment in message.Attachments)
+        {
+            mail.Attachments.Add(new Attachment(new MemoryStream(attachment.Content), attachment.FileName, attachment.MimeType));
+        }
+
+        // SmtpClient.Timeout only applies to the synchronous Send(); for SendMailAsync the
+        // linked token is the real timeout. Attachment-heavy mail (daily summary charts +
+        // logs) takes much longer to stream/scan on some relays, so give it more headroom.
+        var timeoutMs = message.Attachments.Count > 0
+            ? Math.Max(_options.TimeoutMilliseconds, 120_000)
+            : _options.TimeoutMilliseconds;
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(_options.TimeoutMilliseconds);
+        cts.CancelAfter(timeoutMs);
         await client.SendMailAsync(mail, cts.Token);
     }
 }

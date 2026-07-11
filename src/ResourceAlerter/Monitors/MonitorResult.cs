@@ -11,6 +11,12 @@ public sealed record MonitorResult
     /// <summary>Current value, formatted for display (e.g. "87.3%", "82.1°C").</summary>
     public required string DisplayValue { get; init; }
 
+    /// <summary>Raw numeric reading, for recording/charting. Null when the check has no meaningful scalar (e.g. unavailable).</summary>
+    public double? NumericValue { get; init; }
+
+    /// <summary>Unit of <see cref="NumericValue"/> for axis labels, e.g. "%", "°C", "V", "GB free".</summary>
+    public string? Unit { get; init; }
+
     /// <summary>Configured threshold, formatted for display.</summary>
     public required string DisplayThreshold { get; init; }
 

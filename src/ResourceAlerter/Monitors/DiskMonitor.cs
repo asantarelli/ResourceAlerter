@@ -81,6 +81,8 @@ public sealed class DiskMonitor : IHealthMonitor
                 Subject = driveLetter,
                 InRange = inRange,
                 DisplayValue = $"{freeGb:F1} GB free ({freePercent:F1}%)",
+                NumericValue = freeGb,
+                Unit = "GB free",
                 DisplayThreshold = $"below {_options.FreeSpacePercentThreshold}% or {_options.FreeSpaceAbsoluteGbThreshold} GB",
             };
         }

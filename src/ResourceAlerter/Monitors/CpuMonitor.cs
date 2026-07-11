@@ -92,6 +92,8 @@ public sealed class CpuMonitor : IHealthMonitor, IDisposable
                 Subject = "Total",
                 InRange = inRange,
                 DisplayValue = $"{value:F1}%",
+                NumericValue = value,
+                Unit = "%",
                 DisplayThreshold = $"{_options.AlertThresholdPercent}% (recovery below {_options.RecoveryThresholdPercent}%)",
             },
         };

@@ -3,8 +3,10 @@ using Microsoft.Extensions.Hosting.WindowsServices;
 using ResourceAlerter;
 using ResourceAlerter.Alerting;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Data;
 using ResourceAlerter.Logging;
 using ResourceAlerter.Monitors;
+using ResourceAlerter.Reporting;
 
 if (args.Contains("--list-sensors"))
 {
@@ -28,6 +30,7 @@ builder.Services.AddWindowsService(o => o.ServiceName = "ResourceAlerter");
 builder.Services.Configure<MonitoringOptions>(builder.Configuration.GetSection(MonitoringOptions.SectionName));
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<GeneralOptions>(builder.Configuration.GetSection(GeneralOptions.SectionName));
+builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 
 var fileLoggingOptions = new FileLoggingOptions();
 builder.Configuration.GetSection(FileLoggingOptions.SectionName).Bind(fileLoggingOptions);
@@ -36,6 +39,8 @@ builder.Logging.AddProvider(new FileLoggerProvider(fileLoggingOptions));
 builder.Services.AddSingleton<IAlertSender, SmtpAlertSender>();
 
 builder.Services.AddSingleton<HardwareMonitorAccessor>();
+builder.Services.AddSingleton<DataRecorder>();
+builder.Services.AddSingleton<DailySummaryService>();
 
 builder.Services.AddSingleton<IHealthMonitor, CpuMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, MemoryMonitor>();
@@ -53,6 +58,17 @@ if (!isWindowsService)
 }
 
 var host = builder.Build();
+
+// Test hook: builds and sends the 00:00 daily summary immediately, then exits. Lets an admin
+// verify charts/log/sensor-list mail delivery against the real SMTP without waiting a day.
+if (args.Contains("--send-summary"))
+{
+    var summary = host.Services.GetRequiredService<DailySummaryService>();
+    await summary.SendAsync(DateTimeOffset.Now, CancellationToken.None);
+    Console.WriteLine("Daily summary mail attempt finished (check logs / inbox).");
+    return;
+}
+
 host.Run();
 
 static void ListSensors()
