@@ -14,6 +14,18 @@ if (args.Contains("--list-sensors"))
     return;
 }
 
+// The installer only ever ships/updates appsettings.example.json — it never touches
+// appsettings.json itself, so an upgrade or even an uninstall/reinstall can never clobber a
+// server's real configuration (this used to be "enforced" via WiX Component Permanent/
+// NeverOverwrite flags, which turned out not to be reliable in practice). On a genuinely fresh
+// install there's no appsettings.json yet, so bootstrap one from the example here.
+var appSettingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+var exampleSettingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.example.json");
+if (!File.Exists(appSettingsPath) && File.Exists(exampleSettingsPath))
+{
+    File.Copy(exampleSettingsPath, appSettingsPath);
+}
+
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
     Args = args,
@@ -59,13 +71,24 @@ if (!isWindowsService)
 
 var host = builder.Build();
 
-// Test hook: builds and sends the 00:00 daily summary immediately, then exits. Lets an admin
-// verify charts/log/sensor-list mail delivery against the real SMTP without waiting a day.
+// Builds and sends the daily summary (last 24h) immediately, then exits — either as a manual
+// test hook, or as what the Viewer's "send today's summary" button launches (elevated, so
+// HardwareMonitorAccessor gets the same sensor access the service itself has). Exit code
+// reflects whether the mail actually made it out, not just whether this process ran cleanly.
 if (args.Contains("--send-summary"))
 {
-    var summary = host.Services.GetRequiredService<DailySummaryService>();
-    await summary.SendAsync(DateTimeOffset.Now, CancellationToken.None);
-    Console.WriteLine("Daily summary mail attempt finished (check logs / inbox).");
+    try
+    {
+        var summary = host.Services.GetRequiredService<DailySummaryService>();
+        var sent = await summary.SendAsync(DateTimeOffset.Now, CancellationToken.None);
+        Console.WriteLine(sent ? "Daily summary mail sent." : "Daily summary mail FAILED to send (check logs).");
+        Environment.ExitCode = sent ? 0 : 1;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Daily summary failed: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
     return;
 }
 

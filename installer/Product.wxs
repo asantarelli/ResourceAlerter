@@ -6,9 +6,13 @@
   with the right defines. The install path is intentionally fixed (not user-choosable) so a
   fleet of servers ends up with a predictable, scriptable layout.
 
-  appsettings.json is only installed if it doesn't already exist at the target path (see the
-  AppSearch/Condition below) — this makes upgrades safe: re-running the installer over an
-  existing install never clobbers a server's already-tuned SMTP/threshold configuration.
+  appsettings.json itself is deliberately NOT an MSI-managed file — the installer only ever
+  installs appsettings.example.json (a normal, freely-overwritable component). The service
+  bootstraps the real appsettings.json from that example on first run if it's missing (see
+  Program.cs) and never touches it again. Two earlier approaches to protecting the real config
+  file from WiX itself (an AppSearch-based Condition, then Component Permanent+NeverOverwrite)
+  both turned out to be unreliable across upgrade/uninstall/reinstall cycles in practice — don't
+  go back to trying to solve this at the MSI level; keep the file out of MSI's hands entirely.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
@@ -24,7 +28,14 @@
 
     <SummaryInformation Description="ResourceAlerter - Server Health Monitor Setup" Manufacturer="SDigitales" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of ResourceAlerter is already installed." />
+    <!-- afterInstallInitialize (explicit, not relying on the default) removes the old product —
+         including stopping and deleting its service via that version's own ServiceControl —
+         early, before this version's files are installed. Combined with the ForceStopService
+         custom action below (extra insurance against a lingering file lock, e.g. from AV
+         scanning the just-written exe), this is what makes `msiexec /i` work directly as an
+         in-place upgrade without the admin having to manually uninstall first. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ResourceAlerter is already installed."
+                  Schedule="afterInstallInitialize" />
 
     <MediaTemplate EmbedCab="yes" />
 
@@ -33,14 +44,28 @@
       <Directory Id="INSTALLFOLDER" Name="ResourceAlerter" />
     </StandardDirectory>
 
-    <StandardDirectory Id="DesktopFolder" />
-
-    <!-- Detects a pre-existing appsettings.json at the target path before anything is installed. -->
-    <Property Id="APPSETTINGSJSONEXISTS" Secure="no">
-      <DirectorySearch Id="InstallDirSearch" Path="[INSTALLFOLDER]" Depth="0">
-        <FileSearch Id="AppSettingsFileSearch" Name="appsettings.json" />
-      </DirectorySearch>
-    </Property>
+    <!-- Desktop shortcut lives in its own component per MSI's standard authoring rule (ICE43/57):
+         a component containing a shortcut must use an HKCU registry value as its KeyPath, not a
+         file — mixing them is what previously left the shortcut's icon blank (Advertise="yes"
+         shortcuts, the workaround some installers use to dodge this rule, resolve their icon via
+         the MSI Icon table instead of the target file, which was never populated here). This is
+         a normal pattern even in a per-machine package: DesktopFolder is auto-redirected to the
+         shared "Public Desktop" by Windows Installer's ALLUSERS handling. -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="ViewerDesktopShortcut" Guid="C26C472A-1CE5-4F53-8D46-E9A951F154B9">
+        <Shortcut Id="ViewerDesktopShortcutFile"
+                  Name="ResourceAlerter Viewer"
+                  Description="View recorded server health data and alert history"
+                  Target="[#ViewerExe]"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU"
+                        Key="Software\SDigitales\ResourceAlerter"
+                        Name="ViewerShortcutInstalled"
+                        Type="integer"
+                        Value="1"
+                        KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
 
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
 
@@ -73,37 +98,53 @@
                          Wait="yes" />
       </Component>
 
-      <!-- Only installed on a fresh install; an upgrade over an existing install leaves the
-           admin's already-configured appsettings.json untouched. -->
-      <Component Id="AppSettingsJson" Guid="2D4E6F8A-1B3C-4D5E-8F7A-9B0C1D2E3F4A" Condition="NOT APPSETTINGSJSONEXISTS">
-        <File Id="AppSettingsJsonFile" Source="$(var.PublishDir)\appsettings.json" KeyPath="yes" />
+      <!-- Installed under a different name on purpose — see the file header comment. The
+           service copies this to appsettings.json itself, only if that file doesn't exist yet. -->
+      <Component Id="AppSettingsExampleJson" Guid="2D4E6F8A-1B3C-4D5E-8F7A-9B0C1D2E3F4A">
+        <File Id="AppSettingsExampleJsonFile" Source="$(var.PublishDir)\appsettings.json" Name="appsettings.example.json" KeyPath="yes" />
       </Component>
 
-      <!-- Viewer app (charts over the recorded data), with a desktop shortcut for all users. -->
+      <!-- Viewer app (charts over the recorded data). -->
       <Component Id="ViewerExecutable" Guid="5A7B9C1D-4E6F-4A7B-9C8D-2E3F4A5B6C7D">
-        <File Id="ViewerExe" Source="$(var.ViewerPublishDir)\ResourceAlerterViewer.exe" KeyPath="yes">
-          <Shortcut Id="ViewerDesktopShortcut"
-                    Directory="DesktopFolder"
-                    Name="ResourceAlerter Viewer"
-                    Description="View recorded server health data and alert history"
-                    WorkingDirectory="INSTALLFOLDER"
-                    Advertise="yes" />
-        </File>
-      </Component>
-
-      <Component Id="MonoPosixHelperDll" Guid="3E5F7A9B-2C4D-4E5F-9A8B-0C1D2E3F4A5B">
-        <File Id="MonoPosixHelperDllFile" Source="$(var.PublishDir)\MonoPosixHelper.dll" KeyPath="yes" />
-      </Component>
-
-      <Component Id="LibMonoPosixHelperDll" Guid="4F6A8B0C-3D5E-4F6A-8B9C-1D2E3F4A5B6C">
-        <File Id="LibMonoPosixHelperDllFile" Source="$(var.PublishDir)\libMonoPosixHelper.dll" KeyPath="yes" />
+        <File Id="ViewerExe" Source="$(var.ViewerPublishDir)\ResourceAlerterViewer.exe" KeyPath="yes" />
       </Component>
 
     </ComponentGroup>
 
+    <!-- The service is published self-contained but NOT single-file (see ResourceAlerter.csproj
+         for why), so its ~240 supporting DLLs/native libs need to ship too. Bulk-harvest
+         everything in the publish folder except the two files already handled explicitly above
+         (the exe carries the service install; the source appsettings.json gets installed under
+         a different name by the AppSettingsExampleJson component) — avoids hand-authoring
+         hundreds of Component/File entries. -->
+    <ComponentGroup Id="ServiceSupportFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**">
+        <Exclude Files="$(var.PublishDir)\ResourceAlerter.exe" />
+        <Exclude Files="$(var.PublishDir)\appsettings.json" />
+      </Files>
+    </ComponentGroup>
+
     <Feature Id="Main" Title="ResourceAlerter" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ServiceSupportFiles" />
+      <ComponentRef Id="ViewerDesktopShortcut" />
     </Feature>
+
+    <!-- Extra insurance beyond ServiceControl's built-in Stop/Start: force-kill the process
+         right before files are copied, in case the SCM reports "stopped" while something
+         (commonly AV real-time scanning) still holds the exe's file handle a moment longer.
+         Return="ignore" so this never fails the install (e.g. on a fresh install where the
+         process was never running). -->
+    <CustomAction Id="ForceStopResourceAlerterExe"
+                  Directory="SystemFolder"
+                  ExeCommand="taskkill.exe /F /IM ResourceAlerter.exe"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="ForceStopResourceAlerterExe" Before="InstallFiles" />
+    </InstallExecuteSequence>
 
     <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
     <ui:WixUI Id="WixUI_Minimal" />

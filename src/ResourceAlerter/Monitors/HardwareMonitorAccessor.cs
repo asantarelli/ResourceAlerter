@@ -40,44 +40,32 @@ public sealed class HardwareMonitorAccessor : IDisposable
     }
 
     /// <summary>
-    /// Dumps every sensor of every type (temperature, voltage, fan, load, clock, ...) with its
-    /// current value. Used by the daily summary mail so the admin can see exactly what each
-    /// machine's hardware exposes and plan which sensors to support next.
+    /// Full diagnostic dump via LibreHardwareMonitor's own <see cref="Computer.GetReport"/> —
+    /// the same report format used when filing hardware-support issues upstream. Includes the
+    /// SMBIOS section (motherboard manufacturer/model, BIOS vendor/version) at the top, followed
+    /// by the complete hardware/sensor tree with real chip names, not just sensor readings.
+    /// Used in the daily summary mail so the admin can see exactly what model of hardware a
+    /// machine has and plan which sensors to support next (e.g. via SensorNameOverrides).
     /// </summary>
-    public IReadOnlyList<string> DescribeAllSensors()
+    public string GetFullHardwareReport()
     {
         if (!_opened)
         {
-            return new[] { "(LibreHardwareMonitor unavailable on this machine — no sensors to list)" };
+            return "(LibreHardwareMonitor unavailable on this machine — no report to generate)";
         }
 
-        var lines = new List<string>();
         try
         {
             foreach (var hardware in _computer.Hardware)
             {
                 UpdateRecursive(hardware);
-                DescribeRecursive(hardware, lines);
             }
+            return _computer.GetReport();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to enumerate sensors for the daily summary");
-            lines.Add($"(sensor enumeration failed: {ex.Message})");
-        }
-        return lines;
-    }
-
-    private static void DescribeRecursive(IHardware hardware, List<string> lines)
-    {
-        foreach (var sensor in hardware.Sensors)
-        {
-            var value = sensor.Value.HasValue ? sensor.Value.Value.ToString("F3") : "n/a";
-            lines.Add($"[{hardware.HardwareType}] {hardware.Name} | {sensor.SensorType} | '{sensor.Name}' = {value}");
-        }
-        foreach (var sub in hardware.SubHardware)
-        {
-            DescribeRecursive(sub, lines);
+            _logger.LogWarning(ex, "Failed to generate the hardware report for the daily summary");
+            return $"(hardware report generation failed: {ex.Message})";
         }
     }
 

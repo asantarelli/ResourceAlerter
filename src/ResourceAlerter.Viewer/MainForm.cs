@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ScottPlot.WinForms;
 
 namespace ResourceAlerter.Viewer;
@@ -8,11 +9,16 @@ namespace ResourceAlerter.Viewer;
 /// </summary>
 public sealed class MainForm : Form
 {
+    private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(30);
+
     private readonly DataReader _reader;
     private readonly ComboBox _seriesCombo;
     private readonly Label _currentValueLabel;
+    private readonly Label _autoRefreshLabel;
     private readonly Button _refreshButton;
+    private readonly Button _sendSummaryButton;
     private readonly FormsPlot _plot;
+    private readonly System.Windows.Forms.Timer _autoRefreshTimer;
 
     public MainForm(DataReader reader)
     {
@@ -22,6 +28,15 @@ public sealed class MainForm : Form
         Width = 1000;
         Height = 600;
         StartPosition = FormStartPosition.CenterScreen;
+
+        try
+        {
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        }
+        catch
+        {
+            // Non-fatal cosmetic fallback to the default WinForms icon.
+        }
 
         var topPanel = new Panel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(8) };
 
@@ -35,27 +50,111 @@ public sealed class MainForm : Form
         _seriesCombo.SelectedIndexChanged += (_, _) => LoadSelectedSeries();
 
         _refreshButton = new Button { Text = "Refrescar", Left = 340, Top = 8, Width = 90 };
-        _refreshButton.Click += (_, _) => Refresh(fullReload: false);
+        _refreshButton.Click += (_, _) => Refresh(fullReload: true); // also picks up newly-recorded series
+
+        _sendSummaryButton = new Button { Text = "Enviar resumen de hoy", Left = 440, Top = 8, Width = 160 };
+        _sendSummaryButton.Click += async (_, _) => await SendTodaySummaryAsync();
 
         _currentValueLabel = new Label
         {
-            Left = 445,
+            Left = 610,
             Top = 12,
             AutoSize = true,
             Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
             Text = "—",
         };
 
+        _autoRefreshLabel = new Label
+        {
+            Left = 610,
+            Top = 30,
+            AutoSize = true,
+            Font = new Font(Font.FontFamily, 7.5f, FontStyle.Regular),
+            ForeColor = Color.Gray,
+            Text = $"Auto-refresh every {AutoRefreshInterval.TotalSeconds:F0}s",
+        };
+
         topPanel.Controls.Add(_seriesCombo);
         topPanel.Controls.Add(_refreshButton);
+        topPanel.Controls.Add(_sendSummaryButton);
         topPanel.Controls.Add(_currentValueLabel);
+        topPanel.Controls.Add(_autoRefreshLabel);
 
         _plot = new FormsPlot { Dock = DockStyle.Fill };
 
         Controls.Add(_plot);
         Controls.Add(topPanel);
 
-        Load += (_, _) => Refresh(fullReload: true);
+        // Keeps the chart current even if nobody touches the window — the whole point of a
+        // monitoring viewer is that it stays accurate while just sitting open on a screen.
+        _autoRefreshTimer = new System.Windows.Forms.Timer { Interval = (int)AutoRefreshInterval.TotalMilliseconds };
+        _autoRefreshTimer.Tick += (_, _) => Refresh(fullReload: false);
+        FormClosed += (_, _) => _autoRefreshTimer.Stop();
+
+        Load += (_, _) =>
+        {
+            Refresh(fullReload: true);
+            _autoRefreshTimer.Start();
+        };
+    }
+
+    /// <summary>
+    /// The Viewer has no SMTP/mail-sending code of its own — it launches
+    /// `ResourceAlerter.exe --send-summary` (installed next to it) elevated, which is the exact
+    /// same code path the service uses for its 00:00 mail, just run on demand. Elevation matters
+    /// here: without it, the hardware-report attachment would come back mostly empty since
+    /// LibreHardwareMonitor needs the same access level the service (LocalSystem) has.
+    /// </summary>
+    private async Task SendTodaySummaryAsync()
+    {
+        var exePath = Path.Combine(AppContext.BaseDirectory, "ResourceAlerter.exe");
+        if (!File.Exists(exePath))
+        {
+            MessageBox.Show($"No se encontró {exePath}. ¿Está instalado el servicio en esta misma carpeta?",
+                "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        _sendSummaryButton.Enabled = false;
+        _sendSummaryButton.Text = "Enviando...";
+        try
+        {
+            var psi = new ProcessStartInfo(exePath, "--send-summary")
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = AppContext.BaseDirectory,
+            };
+
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar el proceso.");
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode == 0)
+            {
+                MessageBox.Show("El resumen de hoy se envió correctamente.",
+                    "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                MessageBox.Show(
+                    "El envío falló. Revisá el log del servicio (logs\\resourcealerter-*.log, carpeta de instalación) para el detalle.",
+                    "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // User declined the UAC elevation prompt — not worth alarming over.
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"No se pudo enviar el resumen:\r\n\r\n{ex.Message}",
+                "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            _sendSummaryButton.Enabled = true;
+            _sendSummaryButton.Text = "Enviar resumen de hoy";
+        }
     }
 
     private void Refresh(bool fullReload)

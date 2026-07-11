@@ -65,8 +65,8 @@ public sealed class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("ResourceAlerter starting on {Machine}. Polling interval: {Interval}s. Monitors: {Monitors}",
-            _machineName, _options.PollingIntervalSeconds, string.Join(", ", _monitors.Select(m => m.Name)));
+        _logger.LogInformation("ResourceAlerter v{Version} starting on {Machine}. Polling interval: {Interval}s. Monitors: {Monitors}",
+            AppInfo.Version, _machineName, _options.PollingIntervalSeconds, string.Join(", ", _monitors.Select(m => m.Name)));
 
         // Probe once up front so the startup mail can report exactly what's actually being
         // watched on this machine (and what got skipped for lack of a sensor), then feed those
@@ -172,13 +172,23 @@ public sealed class Worker : BackgroundService
     {
         try
         {
+            var recordingWarning = _dataRecorder.IsAvailable
+                ? ""
+                : $"\r\n*** WARNING: data recording (SQLite) failed to start: {_dataRecorder.InitializationError} ***\r\n" +
+                  "*** Charts, the Viewer app, and the daily summary will have no data until this is fixed. ***\r\n" +
+                  "*** Check the log for the full exception; this usually means a native-library packaging problem. ***\r\n";
+
+            var subjectPrefix = _dataRecorder.IsAvailable ? "" : "WARNING: ";
+
             await _alertSender.SendAsync(new AlertMessage
             {
                 Kind = AlertKind.ServiceStarted,
-                Subject = $"[{_machineName}] ResourceAlerter service started",
+                Subject = $"[{_machineName}] {subjectPrefix}ResourceAlerter service started",
                 Body =
                     $"Machine: {_machineName}\r\n" +
-                    $"Started at: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}\r\n\r\n" +
+                    $"Version: {AppInfo.Version}\r\n" +
+                    $"Started at: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}\r\n" +
+                    recordingWarning + "\r\n" +
                     BuildMonitoringSummary(initialCycle) +
                     "\r\nThis is an informational message sent whenever the service starts " +
                     "(including after a reboot) — no action required unless it was unexpected.",

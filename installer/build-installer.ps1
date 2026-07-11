@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Publishes ResourceAlerter (self-contained, single-file) and builds the MSI installer.
+    Publishes ResourceAlerter and builds the MSI installer.
 
 .DESCRIPTION
     Requires the WiX v5 CLI tool (`dotnet tool install --global wix --version 5.0.2`) with the
@@ -38,15 +38,17 @@ if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Host "Publishing self-contained single-file Release build ($Version)..."
+Write-Host "Publishing self-contained Release build ($Version)..."
 if (Test-Path $publishDir) {
     Remove-Item $publishDir -Recurse -Force
 }
+# Deliberately NOT single-file: native libs (SQLite, SkiaSharp) must sit as loose files next to
+# the exe so they load correctly under the LocalSystem service account. See the comment in
+# ResourceAlerter.csproj before changing this.
 dotnet publish $projectPath `
     -c Release `
     -r win-x64 `
     --self-contained true `
-    -p:PublishSingleFile=true `
     -p:PublishReadyToRun=false `
     -p:Version=$Version `
     -o $publishDir

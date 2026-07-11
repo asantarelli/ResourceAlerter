@@ -11,6 +11,15 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <SelfContained>false</SelfContained>
     <AssemblyName>ResourceAlerter</AssemblyName>
+    <!-- IMPORTANT: publish this project WITHOUT -p:PublishSingleFile=true. Single-file bundles
+         extract their native libs (SQLite's e_sqlite3.dll, ScottPlot's libSkiaSharp.dll) to a
+         per-account temp folder at first use — this works for an interactive user but reliably
+         fails when the process runs as the LocalSystem service account, silently disabling data
+         recording (DataRecorder logs a DllNotFoundException and moves on). Publishing self-contained
+         but multi-file avoids extraction entirely: native DLLs sit right next to the exe and load
+         via the normal OS search path, which works identically under any account. installer\
+         build-installer.ps1 is already set up this way; don't add PublishSingleFile back for this
+         project without re-testing under an actual installed (LocalSystem) service. -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +30,17 @@
     <PackageReference Include="ScottPlot" Version="5.0.47" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.1" />
     <PackageReference Include="System.Management" Version="9.0.0" />
+  </ItemGroup>
+
+  <!-- The Worker SDK auto-includes every appsettings.*.json as Content (and copies it to
+       build/publish output), which would sweep up any developer's local per-machine override
+       files (e.g. appsettings.LP.json, which holds real SMTP credentials) along with the real
+       appsettings.json. Drop everything except the base file, which the SDK already handles
+       correctly on its own. -->
+  <ItemGroup>
+    <!-- Pattern requires two dots, so this does NOT match the base appsettings.json itself
+         (the SDK's default include for that file, with correct copy behavior, is untouched). -->
+    <Content Remove="appsettings.*.json" />
   </ItemGroup>
 
 </Project>

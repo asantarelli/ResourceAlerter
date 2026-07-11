@@ -36,6 +36,13 @@ public sealed class DataRecorder : IDisposable
 
     public string DatabasePath => _dbPath;
 
+    /// <summary>False if the database failed to open — recording is silently disabled in that
+    /// case (never take monitoring down over it), but <see cref="Worker"/> surfaces this in the
+    /// startup mail so it's never a silent failure to the admin.</summary>
+    public bool IsAvailable => _connection is not null;
+
+    public string? InitializationError { get; private set; }
+
     public DataRecorder(IOptions<DatabaseOptions> options, ILogger<DataRecorder> logger)
     {
         _options = options.Value;
@@ -49,6 +56,7 @@ public sealed class DataRecorder : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to initialize the SQLite database at {Path}; data recording is disabled for this run", _dbPath);
+            InitializationError = ex.Message;
             _connection = null;
         }
     }

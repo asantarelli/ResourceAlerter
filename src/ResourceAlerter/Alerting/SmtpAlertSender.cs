@@ -21,12 +21,12 @@ public sealed class SmtpAlertSender : IAlertSender
         _logger = logger;
     }
 
-    public async Task SendAsync(AlertMessage message, CancellationToken cancellationToken)
+    public async Task<bool> SendAsync(AlertMessage message, CancellationToken cancellationToken)
     {
         if (_options.Recipients.Count == 0)
         {
             _logger.LogWarning("No SMTP recipients configured; dropping alert '{Subject}'", message.Subject);
-            return;
+            return false;
         }
 
         for (var attempt = 1; attempt <= Math.Max(1, _options.RetryCount); attempt++)
@@ -35,7 +35,7 @@ public sealed class SmtpAlertSender : IAlertSender
             {
                 await SendOnceAsync(message, cancellationToken);
                 _logger.LogInformation("Alert mail sent: {Subject}", message.Subject);
-                return;
+                return true;
             }
             catch (Exception ex) when (attempt < _options.RetryCount)
             {
@@ -49,7 +49,7 @@ public sealed class SmtpAlertSender : IAlertSender
                 }
                 catch (OperationCanceledException)
                 {
-                    return;
+                    return false;
                 }
             }
             catch (Exception ex)
@@ -57,9 +57,11 @@ public sealed class SmtpAlertSender : IAlertSender
                 _logger.LogError(ex,
                     "Failed to send alert mail after {Attempts} attempts: {Subject}. Giving up.",
                     attempt, message.Subject);
-                return;
+                return false;
             }
         }
+
+        return false;
     }
 
     private async Task SendOnceAsync(AlertMessage message, CancellationToken cancellationToken)

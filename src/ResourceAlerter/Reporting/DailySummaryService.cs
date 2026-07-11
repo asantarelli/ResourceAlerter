@@ -44,7 +44,8 @@ public sealed class DailySummaryService
         configuration.GetSection(FileLoggingOptions.SectionName).Bind(_loggingOptions);
     }
 
-    public async Task SendAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    /// <returns>True if the mail was actually sent successfully.</returns>
+    public async Task<bool> SendAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var to = now;
         var from = now.AddHours(-24);
@@ -55,10 +56,11 @@ public sealed class DailySummaryService
 
         AddChartAttachments(attachments, from, to, alerts);
         AddLogAttachments(attachments, summaryDate);
+        AddHardwareReportAttachment(attachments);
 
         var body = BuildBody(summaryDate, from, to, alerts);
 
-        await _alertSender.SendAsync(new AlertMessage
+        var sent = await _alertSender.SendAsync(new AlertMessage
         {
             Kind = AlertKind.DailySummary,
             Subject = $"[{_machineName}] Daily summary {summaryDate:yyyy-MM-dd} — {alerts.Count} alert(s)",
@@ -66,8 +68,10 @@ public sealed class DailySummaryService
             Attachments = attachments,
         }, cancellationToken);
 
-        _logger.LogInformation("Daily summary for {Date} sent ({Alerts} alerts, {Attachments} attachments)",
-            summaryDate, alerts.Count, attachments.Count);
+        _logger.LogInformation("Daily summary for {Date}: {Result} ({Alerts} alerts, {Attachments} attachments)",
+            summaryDate, sent ? "sent" : "FAILED to send", alerts.Count, attachments.Count);
+
+        return sent;
     }
 
     private void AddChartAttachments(List<MailAttachment> attachments, DateTimeOffset from, DateTimeOffset to, IReadOnlyList<AlertEventRecord> alerts)
@@ -95,6 +99,19 @@ public sealed class DailySummaryService
             {
                 _logger.LogWarning(ex, "Failed to render chart for {Monitor}/{Subject}", monitor, subject);
             }
+        }
+    }
+
+    private void AddHardwareReportAttachment(List<MailAttachment> attachments)
+    {
+        try
+        {
+            var report = _hardware.GetFullHardwareReport();
+            attachments.Add(new MailAttachment("hardware-report.txt", System.Text.Encoding.UTF8.GetBytes(report), "text/plain"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to attach the hardware report");
         }
     }
 
@@ -126,6 +143,7 @@ public sealed class DailySummaryService
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Machine: {_machineName}");
+        sb.AppendLine($"Version: {AppInfo.Version}");
         sb.AppendLine($"Daily summary for: {summaryDate:yyyy-MM-dd}");
         sb.AppendLine($"Period: {from.LocalDateTime:yyyy-MM-dd HH:mm} — {to.LocalDateTime:yyyy-MM-dd HH:mm}");
         sb.AppendLine();
@@ -148,13 +166,10 @@ public sealed class DailySummaryService
         }
 
         sb.AppendLine();
-        sb.AppendLine("Attached: one chart per monitored variable (red vertical lines mark alert starts) and the day's log file(s).");
-        sb.AppendLine();
-        sb.AppendLine("All hardware sensors exposed on this machine (for planning future monitoring support):");
-        foreach (var line in _hardware.DescribeAllSensors())
-        {
-            sb.AppendLine("  " + line);
-        }
+        sb.AppendLine("Attached: one chart per monitored variable (red vertical lines mark alert starts), the " +
+                      "day's log file(s), and hardware-report.txt — the full LibreHardwareMonitor diagnostic " +
+                      "dump for this machine (motherboard/BIOS model plus every sensor it exposes), for " +
+                      "planning which sensors to support next.");
 
         return sb.ToString();
     }

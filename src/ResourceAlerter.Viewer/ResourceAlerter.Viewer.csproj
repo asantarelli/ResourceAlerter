@@ -15,6 +15,7 @@
          stay embedded in the bundle and P/Invoke can't find them at runtime, crashing with
          DllNotFoundException on the very first plot. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <ApplicationIcon>Assets\ResourceAlerterViewer.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

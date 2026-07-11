@@ -146,11 +146,14 @@ msiexec /i ResourceAlerterSetup-1.0.0.msi /quiet    # silent, for scripted rollo
 ```
 
 Installs to `C:\Program Files\ResourceAlerter` (fixed path, not user-selectable, so the
-whole fleet stays consistent). **Upgrades are safe**: re-running a newer version's installer
-over an existing install replaces the binaries but never overwrites an already-configured
-`appsettings.json` — only a fresh install writes the default one. Bump `-Version` for each
-release you build (the `UpgradeCode` in `installer\Product.wxs` stays fixed across versions
-so Windows Installer recognizes it as an upgrade, not a conflicting product).
+whole fleet stays consistent). **Upgrades/reinstalls are safe**: `appsettings.json` is
+deliberately not an MSI-managed file at all — the installer only ever ships
+`appsettings.example.json` (always refreshed to the latest template), and the service itself
+copies that to `appsettings.json` on startup *only if that file doesn't exist yet*. Once a
+server has a real `appsettings.json`, no installer action (upgrade, uninstall, reinstall,
+repair) can touch it. Bump `-Version` for each release you build (the `UpgradeCode` in
+`installer\Product.wxs` stays fixed across versions so Windows Installer recognizes it as an
+upgrade, not a conflicting product).
 
 Uninstall like any other Windows app: `msiexec /x ResourceAlerterSetup-1.0.0.msi`, or via
 Settings → Apps → ResourceAlerter → Uninstall.
