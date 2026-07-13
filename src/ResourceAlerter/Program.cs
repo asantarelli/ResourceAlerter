@@ -43,12 +43,15 @@ builder.Services.Configure<MonitoringOptions>(builder.Configuration.GetSection(M
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<GeneralOptions>(builder.Configuration.GetSection(GeneralOptions.SectionName));
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
+builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
 
 var fileLoggingOptions = new FileLoggingOptions();
 builder.Configuration.GetSection(FileLoggingOptions.SectionName).Bind(fileLoggingOptions);
 builder.Logging.AddProvider(new FileLoggerProvider(fileLoggingOptions));
 
-builder.Services.AddSingleton<IAlertSender, SmtpAlertSender>();
+builder.Services.AddSingleton<SmtpAlertSender>();
+builder.Services.AddSingleton<DiscordAlertSender>();
+builder.Services.AddSingleton<IAlertSender, CompositeAlertSender>();
 
 builder.Services.AddSingleton<HardwareMonitorAccessor>();
 builder.Services.AddSingleton<DataRecorder>();

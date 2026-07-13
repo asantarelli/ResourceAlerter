@@ -32,6 +32,10 @@
     <PackageReference Include="System.Management" Version="9.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ResourceAlerter.Shared\ResourceAlerter.Shared.csproj" />
+  </ItemGroup>
+
   <!-- The Worker SDK auto-includes every appsettings.*.json as Content (and copies it to
        build/publish output), which would sweep up any developer's local per-machine override
        files (e.g. appsettings.LP.json, which holds real SMTP credentials) along with the real

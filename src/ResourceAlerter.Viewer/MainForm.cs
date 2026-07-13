@@ -17,6 +17,7 @@ public sealed class MainForm : Form
     private readonly Label _autoRefreshLabel;
     private readonly Button _refreshButton;
     private readonly Button _sendSummaryButton;
+    private readonly Button _settingsButton;
     private readonly FormsPlot _plot;
     private readonly System.Windows.Forms.Timer _autoRefreshTimer;
 
@@ -74,11 +75,24 @@ public sealed class MainForm : Form
             Text = $"Auto-refresh every {AutoRefreshInterval.TotalSeconds:F0}s",
         };
 
+        // Dock (not Anchor+manual Left) so this doesn't depend on topPanel's width being known
+        // at construction time — topPanel isn't even added to the form yet at this point, so an
+        // Anchor-based position computed off the form's own Width was landing in the wrong
+        // place (that's why this button wasn't visible).
+        _settingsButton = new Button
+        {
+            Text = "Configuración",
+            Width = 110,
+            Dock = DockStyle.Right,
+        };
+        _settingsButton.Click += (_, _) => OpenSettings();
+
         topPanel.Controls.Add(_seriesCombo);
         topPanel.Controls.Add(_refreshButton);
         topPanel.Controls.Add(_sendSummaryButton);
         topPanel.Controls.Add(_currentValueLabel);
         topPanel.Controls.Add(_autoRefreshLabel);
+        topPanel.Controls.Add(_settingsButton);
 
         _plot = new FormsPlot { Dock = DockStyle.Fill };
 
@@ -155,6 +169,14 @@ public sealed class MainForm : Form
             _sendSummaryButton.Enabled = true;
             _sendSummaryButton.Text = "Enviar resumen de hoy";
         }
+    }
+
+    private void OpenSettings()
+    {
+        var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        using var form = new SettingsForm(configPath);
+        form.ShowDialog(this);
+        Refresh(fullReload: true);
     }
 
     private void Refresh(bool fullReload)

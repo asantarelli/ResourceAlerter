@@ -5,9 +5,11 @@ using ResourceAlerter.Configuration;
 namespace ResourceAlerter.Monitors;
 
 /// <summary>
-/// Free disk space on the system drive plus any additionally configured drives.
-/// Alerts if free space drops below the configured percentage OR the configured absolute
-/// GB floor, whichever is more restrictive (i.e. either condition alone triggers).
+/// Free disk space on whichever drives are configured — <see cref="DiskOptions.Drives"/>, if
+/// set, REPLACES the default (the system drive isn't watched unless it's explicitly listed).
+/// This lets a server whose C: is roomy but whose D: holds the actual temp/swap/DB data watch
+/// only the drive that matters. Alerts if free space drops below the configured percentage OR
+/// the configured absolute GB floor, whichever is more restrictive (either condition alone triggers).
 /// </summary>
 public sealed class DiskMonitor : IHealthMonitor
 {

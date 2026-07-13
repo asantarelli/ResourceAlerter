@@ -20,6 +20,9 @@ for sensors.
   4. Once back in range and **sustained** there for a window (default 60s), a **resolved**
      mail is sent with the total event duration.
 - Every mail includes machine name, monitor, detected value, threshold, and timing.
+- **Optional Discord notifications**: every alert can also post to a Discord channel via an
+  incoming webhook (no bot needed), in parallel with mail. Mail stays the channel with full
+  detail (attachments); Discord is the quick heads-up.
 - A "service started on `<machine>` at `<time>`" mail is sent on every startup — an indirect
   signal that the box rebooted. It also lists exactly what's being actively monitored (with
   each threshold) and what got skipped on this particular machine, so you know your actual
@@ -34,8 +37,13 @@ for sensors.
   `ResourceAlerter.exe --send-summary`.
 - **A companion Viewer app** (`ResourceAlerterViewer.exe`, desktop shortcut installed by the
   MSI) shows the current/last value of any recorded variable plus its 24-hour area chart,
-  with the same red alert markers. It reads the same SQLite database directly; no elevation
-  needed.
+  with the same red alert markers, auto-refreshing every 30s. It reads the same SQLite
+  database directly; no elevation needed. It also has a **Configuración** button covering
+  every setting (SMTP, Discord, each monitor's thresholds, database/log retention, ...) as a
+  form instead of hand-edited JSON — this is now the primary way to configure a server. If
+  `appsettings.json` doesn't exist yet, the form starts from the same defaults the service
+  itself would use. Saving offers to restart the service (elevated) so changes apply
+  immediately.
 - Everything is also written to a local rotating log file (`logs/`) so you can diagnose
   without depending on mail delivery.
 - If a temperature/voltage sensor isn't exposed by the hardware (or a PSU rail's sensor name
@@ -47,17 +55,19 @@ for sensors.
 ## Project layout
 
 ```
+src/ResourceAlerter.Shared/     Strongly-typed appsettings.json sections (Configuration/),
+                                 shared between the service and the Viewer so both always
+                                 agree on the exact schema.
 src/ResourceAlerter/
   Program.cs                    Host/DI wiring, Windows Service registration
   Worker.cs                     The central polling loop + daily summary scheduling
-  Configuration/                Strongly-typed appsettings.json sections
   Monitors/                     One IHealthMonitor implementation per check
-  Alerting/                     AlertStateTracker (anti-spam) + SMTP sender
+  Alerting/                     AlertStateTracker (anti-spam), SMTP + Discord senders
   Data/                         SQLite recording (samples + alert events)
   Reporting/                    Daily summary mail + headless chart rendering
   Logging/                      Rotating file logger provider
   appsettings.json              Example/default configuration
-src/ResourceAlerter.Viewer/     WinForms viewer app (24h charts over the recorded data)
+src/ResourceAlerter.Viewer/     WinForms viewer app (24h charts + full Settings screen)
 scripts/
   install.ps1 / uninstall.ps1   Register/remove the Windows service
 installer/
@@ -97,8 +107,17 @@ Copy the resulting folder to each server (e.g. `C:\Apps\ResourceAlerter`).
 
 ## Configure
 
-Edit `appsettings.json` next to `ResourceAlerter.exe`, or create
-`appsettings.<MACHINE-NAME>.json` in the same folder to override just a few values per
+**Recommended**: open `ResourceAlerterViewer.exe` (desktop shortcut) and click
+**Configuración**. It's a full form over every setting below, works whether or not
+`appsettings.json` exists yet (starts from the same defaults the service would use), and
+offers to restart the service for you on save. This is also what avoids ever having to
+distribute or hand-edit a config file per server. See
+[GUIA-CONFIGURACION.md](GUIA-CONFIGURACION.md) (Spanish) for a field-by-field walkthrough of
+every tab, including how to get a Discord webhook URL and how to find real sensor names for
+the Voltage tab.
+
+If you'd rather edit JSON directly: edit `appsettings.json` next to `ResourceAlerter.exe`, or
+create `appsettings.<MACHINE-NAME>.json` in the same folder to override just a few values per
 server without touching the shared base file (both are loaded; the machine-specific one
 wins). At minimum, set:
 
@@ -110,6 +129,8 @@ wins). At minimum, set:
 - `Monitoring.Network.TargetHost` — leave `null` to auto-detect the default gateway
   (falls back to `Monitoring.Network.FallbackHost`, default `8.8.8.8`), or pin an explicit
   host.
+- `Discord.Enabled` / `Discord.WebhookUrl` — optional; a target channel's Settings →
+  Integrations → Webhooks gives you the URL, no bot needed.
 
 All thresholds, sustained/recovery windows, reminder interval, and polling interval are
 configurable per monitor — see the comments (`"//"` keys) in `appsettings.json`.
