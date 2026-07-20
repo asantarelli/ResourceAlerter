@@ -1,10 +1,11 @@
 using Microsoft.Data.Sqlite;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Viewer;
 
 public sealed record SeriesKey(string Monitor, string Subject, string? Unit)
 {
-    public override string ToString() => $"{Monitor} — {Subject}";
+    public override string ToString() => $"{Strings.MonitorDisplayName(Monitor)} — {Strings.SubjectDisplayName(Monitor, Subject)}";
 }
 
 public sealed record SamplePoint(DateTimeOffset Timestamp, double Value);

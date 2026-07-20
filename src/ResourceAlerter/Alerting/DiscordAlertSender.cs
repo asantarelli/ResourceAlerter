@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Alerting;
 
@@ -49,7 +50,7 @@ public sealed class DiscordAlertSender
             // back at the fuller mail rather than risk the whole post being rejected.
             const int maxDescriptionLength = 3800;
             var description = message.Body.Length > maxDescriptionLength
-                ? message.Body[..maxDescriptionLength] + "\r\n… (truncated — see the e-mail for full detail)"
+                ? message.Body[..maxDescriptionLength] + Strings.Discord_Truncated
                 : message.Body;
 
             var payload = new
@@ -70,16 +71,16 @@ public sealed class DiscordAlertSender
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Discord alert sent: {Subject}", message.Subject);
+                _logger.LogInformation(Strings.Log_DiscordSent, message.Subject);
                 return true;
             }
 
-            _logger.LogWarning("Discord webhook returned {StatusCode} for '{Subject}'", response.StatusCode, message.Subject);
+            _logger.LogWarning(Strings.Log_DiscordBadStatus, response.StatusCode, message.Subject);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send Discord alert '{Subject}'", message.Subject);
+            _logger.LogWarning(ex, Strings.Log_DiscordSendFailed, message.Subject);
             return false;
         }
     }

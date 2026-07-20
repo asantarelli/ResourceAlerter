@@ -2,6 +2,7 @@ using LibreHardwareMonitor.Hardware;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -30,7 +31,7 @@ public sealed class TemperatureMonitor : IHealthMonitor
     {
         if (!_accessor.IsAvailable)
         {
-            return Unavailable("LibreHardwareMonitor could not open (driver/privilege issue).");
+            return Unavailable(Strings.Unavailable_HardwareMonitorClosed);
         }
 
         var sensors = _accessor.GetSensors(SensorType.Temperature);
@@ -38,7 +39,7 @@ public sealed class TemperatureMonitor : IHealthMonitor
 
         if (cpuSensors.Count == 0)
         {
-            return Unavailable("No CPU temperature sensors are exposed by this hardware.");
+            return Unavailable(Strings.Unavailable_NoCpuTempSensors);
         }
 
         var package = cpuSensors.FirstOrDefault(s => s.Sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase));
@@ -48,12 +49,12 @@ public sealed class TemperatureMonitor : IHealthMonitor
         if (package.Sensor is not null)
         {
             value = package.Sensor.Value!.Value;
-            subject = "CPU Package";
+            subject = Strings.Temperature_CpuPackageKey;
         }
         else
         {
             value = cpuSensors.Average(s => s.Sensor.Value!.Value);
-            subject = "CPU (avg of cores)";
+            subject = Strings.Temperature_CpuAvgOfCoresKey;
         }
 
         var threshold = _options.AlertThresholdCelsius;
@@ -68,10 +69,10 @@ public sealed class TemperatureMonitor : IHealthMonitor
             {
                 Subject = subject,
                 InRange = !_currentlyOutOfRange,
-                DisplayValue = $"{value:F1}°C",
+                DisplayValue = $"{Strings.FormatNumber(value, "F1")}°C",
                 NumericValue = value,
                 Unit = "°C",
-                DisplayThreshold = $"{threshold:F0}°C",
+                DisplayThreshold = $"{Strings.FormatNumber(threshold, "F0")}°C",
             },
         };
     }
@@ -82,8 +83,8 @@ public sealed class TemperatureMonitor : IHealthMonitor
         {
             Subject = "CPU",
             InRange = true,
-            DisplayValue = "n/a",
-            DisplayThreshold = "n/a",
+            DisplayValue = Strings.NotAvailable,
+            DisplayThreshold = Strings.NotAvailable,
             Unavailable = true,
             UnavailableReason = reason,
         },

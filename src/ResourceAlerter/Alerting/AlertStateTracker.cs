@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using ResourceAlerter.Configuration;
 using ResourceAlerter.Data;
+using ResourceAlerter.Localization;
 using ResourceAlerter.Monitors;
 
 namespace ResourceAlerter.Alerting;
@@ -102,9 +103,7 @@ public sealed class AlertStateTracker
         }
 
         entry.UnavailableWarnedAt = DateTimeOffset.UtcNow;
-        _logger.LogInformation(
-            "{Monitor}/{Subject} sensor not available on this hardware ({Reason}); ignoring — no alert mail will be sent for it.",
-            _monitorName, result.Subject, result.UnavailableReason);
+        _logger.LogInformation(Strings.Log_SensorUnavailableIgnored, _monitorName, Strings.SubjectDisplayName(_monitorName, result.Subject), result.UnavailableReason);
 
         return Task.CompletedTask;
     }
@@ -186,20 +185,21 @@ public sealed class AlertStateTracker
 
     private Task SendTriggeredAsync(MonitorResult result, Entry entry, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        _logger.LogWarning("{Monitor}/{Subject} ALERT: {Value} (threshold {Threshold})",
-            _monitorName, result.Subject, result.DisplayValue, result.DisplayThreshold);
+        var subjectDisplay = Strings.SubjectDisplayName(_monitorName, result.Subject);
+        _logger.LogWarning(Strings.Log_AlertTriggered, _monitorName, subjectDisplay, result.DisplayValue, result.DisplayThreshold);
 
+        var monitorDisplay = Strings.MonitorDisplayName(_monitorName);
         return _alertSender.SendAsync(new AlertMessage
         {
             Kind = AlertKind.Triggered,
-            Subject = $"[{_machineName}] ALERT: {_monitorName} - {result.Subject}",
+            Subject = Strings.Subject_Alert(_machineName, monitorDisplay, subjectDisplay),
             Body =
-                $"Machine: {_machineName}\r\n" +
-                $"Monitor: {_monitorName}\r\n" +
-                $"Subject: {result.Subject}\r\n" +
-                $"Detected value: {result.DisplayValue}\r\n" +
-                $"Threshold: {result.DisplayThreshold}\r\n" +
-                $"Event started: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n",
+                $"{Strings.Label_Machine}: {_machineName}\r\n" +
+                $"{Strings.Label_Monitor}: {monitorDisplay}\r\n" +
+                $"{Strings.Label_Item}: {subjectDisplay}\r\n" +
+                $"{Strings.Label_DetectedValue}: {result.DisplayValue}\r\n" +
+                $"{Strings.Label_Threshold}: {result.DisplayThreshold}\r\n" +
+                $"{Strings.Label_EventStarted}: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n",
         }, cancellationToken);
     }
 
@@ -207,18 +207,20 @@ public sealed class AlertStateTracker
     {
         var duration = entry.EventStartedAt is null ? TimeSpan.Zero : now - entry.EventStartedAt.Value;
 
+        var subjectDisplay = Strings.SubjectDisplayName(_monitorName, result.Subject);
+        var monitorDisplay = Strings.MonitorDisplayName(_monitorName);
         return _alertSender.SendAsync(new AlertMessage
         {
             Kind = AlertKind.Reminder,
-            Subject = $"[{_machineName}] STILL ACTIVE: {_monitorName} - {result.Subject}",
+            Subject = Strings.Subject_StillActive(_machineName, monitorDisplay, subjectDisplay),
             Body =
-                $"Machine: {_machineName}\r\n" +
-                $"Monitor: {_monitorName}\r\n" +
-                $"Subject: {result.Subject}\r\n" +
-                $"Current value: {result.DisplayValue}\r\n" +
-                $"Threshold: {result.DisplayThreshold}\r\n" +
-                $"Event started: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
-                $"Ongoing for: {FormatDuration(duration)}\r\n",
+                $"{Strings.Label_Machine}: {_machineName}\r\n" +
+                $"{Strings.Label_Monitor}: {monitorDisplay}\r\n" +
+                $"{Strings.Label_Item}: {subjectDisplay}\r\n" +
+                $"{Strings.Label_CurrentValue}: {result.DisplayValue}\r\n" +
+                $"{Strings.Label_Threshold}: {result.DisplayThreshold}\r\n" +
+                $"{Strings.Label_EventStarted}: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
+                $"{Strings.Label_OngoingFor}: {FormatDuration(duration)}\r\n",
         }, cancellationToken);
     }
 
@@ -226,21 +228,23 @@ public sealed class AlertStateTracker
     {
         var duration = entry.EventStartedAt is null ? TimeSpan.Zero : now - entry.EventStartedAt.Value;
 
-        _logger.LogInformation("{Monitor}/{Subject} RESOLVED after {Duration}", _monitorName, result.Subject, duration);
+        var subjectDisplay = Strings.SubjectDisplayName(_monitorName, result.Subject);
+        _logger.LogInformation(Strings.Log_AlertResolved, _monitorName, subjectDisplay, duration);
 
+        var monitorDisplay = Strings.MonitorDisplayName(_monitorName);
         return _alertSender.SendAsync(new AlertMessage
         {
             Kind = AlertKind.Resolved,
-            Subject = $"[{_machineName}] RESOLVED: {_monitorName} - {result.Subject}",
+            Subject = Strings.Subject_Resolved(_machineName, monitorDisplay, subjectDisplay),
             Body =
-                $"Machine: {_machineName}\r\n" +
-                $"Monitor: {_monitorName}\r\n" +
-                $"Subject: {result.Subject}\r\n" +
-                $"Last detected value: {entry.LastDisplayValue}\r\n" +
-                $"Threshold: {entry.LastDisplayThreshold}\r\n" +
-                $"Event started: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
-                $"Resolved at: {now:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
-                $"Total duration: {FormatDuration(duration)}\r\n",
+                $"{Strings.Label_Machine}: {_machineName}\r\n" +
+                $"{Strings.Label_Monitor}: {monitorDisplay}\r\n" +
+                $"{Strings.Label_Item}: {subjectDisplay}\r\n" +
+                $"{Strings.Label_LastDetectedValue}: {entry.LastDisplayValue}\r\n" +
+                $"{Strings.Label_Threshold}: {entry.LastDisplayThreshold}\r\n" +
+                $"{Strings.Label_EventStarted}: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
+                $"{Strings.Label_ResolvedAt}: {now:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
+                $"{Strings.Label_TotalDuration}: {FormatDuration(duration)}\r\n",
         }, cancellationToken);
     }
 

@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Data;
 
@@ -55,7 +56,7 @@ public sealed class DataRecorder : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize the SQLite database at {Path}; data recording is disabled for this run", _dbPath);
+            _logger.LogError(ex, Strings.Log_DbInitFailed, _dbPath);
             InitializationError = ex.Message;
             _connection = null;
         }
@@ -99,7 +100,7 @@ public sealed class DataRecorder : IDisposable
             """;
         cmd.ExecuteNonQuery();
 
-        _logger.LogInformation("SQLite data recording initialized at {Path} (retention {Days} days)", _dbPath, _options.RetentionDays);
+        _logger.LogInformation(Strings.Log_DbInitialized, _dbPath, _options.RetentionDays);
     }
 
     /// <summary>
@@ -125,7 +126,7 @@ public sealed class DataRecorder : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not adjust ACL on {Directory}; the Viewer may not be able to read the database without elevation", directory);
+            _logger.LogWarning(ex, Strings.Log_AclAdjustFailed, directory);
         }
     }
 
@@ -164,7 +165,7 @@ public sealed class DataRecorder : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to record {Count} samples", samples.Count);
+                _logger.LogWarning(ex, Strings.Log_RecordSamplesFailed, samples.Count);
             }
 
             PurgeIfDue();
@@ -196,7 +197,7 @@ public sealed class DataRecorder : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to record alert start for {Monitor}/{Subject}", monitor, subject);
+                _logger.LogWarning(ex, Strings.Log_RecordAlertStartFailed, monitor, subject);
             }
         }
     }
@@ -229,7 +230,7 @@ public sealed class DataRecorder : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to record alert resolution for {Monitor}/{Subject}", monitor, subject);
+                _logger.LogWarning(ex, Strings.Log_RecordAlertResolvedFailed, monitor, subject);
             }
         }
     }
@@ -256,7 +257,7 @@ public sealed class DataRecorder : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to list recorded series");
+                _logger.LogWarning(ex, Strings.Log_ListSeriesFailed);
             }
             return result;
         }
@@ -292,7 +293,7 @@ public sealed class DataRecorder : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to read samples for {Monitor}/{Subject}", monitor, subject);
+                _logger.LogWarning(ex, Strings.Log_ReadSamplesFailed, monitor, subject);
             }
             return result;
         }
@@ -334,7 +335,7 @@ public sealed class DataRecorder : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to read alert events");
+                _logger.LogWarning(ex, Strings.Log_ReadAlertEventsFailed);
             }
             return result;
         }
@@ -358,12 +359,88 @@ public sealed class DataRecorder : IDisposable
             var removed = cmd.ExecuteNonQuery();
             if (removed > 0)
             {
-                _logger.LogInformation("Purged {Count} database rows older than {Days} days", removed, _options.RetentionDays);
+                _logger.LogInformation(Strings.Log_PurgedRows, removed, _options.RetentionDays);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Database purge failed");
+            _logger.LogWarning(ex, Strings.Log_PurgeFailed);
+        }
+    }
+
+    /// <summary>
+    /// Deletes Samples/AlertEvents rows for (Monitor, Subject) pairs that are no longer produced
+    /// by the current configuration — e.g. the admin switched Disk.Drives from "C:" to "D:", or
+    /// (pre-v3.5.1) a language switch changed a translated Subject like "RAM física"/"Physical
+    /// RAM" into a different string. Without this, old subjects live in the DB forever and the
+    /// Viewer shows them as permanently-frozen, never-updating series alongside the real one.
+    /// Only touches monitors present in <paramref name="activeSubjectsByMonitor"/> — a fully
+    /// disabled monitor's history is left alone entirely (its Monitor name won't be a key in the
+    /// dictionary), since going quiet is not the same as "no longer wanted".
+    /// Called once at service startup (see <see cref="Worker"/>), not every poll cycle — this is
+    /// a config-change cleanup, not a steady-state cost.
+    /// </summary>
+    public void PruneOrphanedSeries(IReadOnlyDictionary<string, HashSet<string>> activeSubjectsByMonitor)
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            try
+            {
+                var orphaned = new List<(string Monitor, string Subject)>();
+                using (var cmd = _connection.CreateCommand())
+                {
+                    cmd.CommandText = """
+                        SELECT Monitor, Subject FROM Samples
+                        UNION
+                        SELECT Monitor, Subject FROM AlertEvents
+                        """;
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        var monitor = reader.GetString(0);
+                        var subject = reader.GetString(1);
+                        if (activeSubjectsByMonitor.TryGetValue(monitor, out var activeSubjects) && !activeSubjects.Contains(subject))
+                        {
+                            orphaned.Add((monitor, subject));
+                        }
+                    }
+                }
+
+                if (orphaned.Count == 0)
+                {
+                    return;
+                }
+
+                using (var tx = _connection.BeginTransaction())
+                using (var delCmd = _connection.CreateCommand())
+                {
+                    delCmd.Transaction = tx;
+                    delCmd.CommandText = "DELETE FROM Samples WHERE Monitor = $mon AND Subject = $sub; DELETE FROM AlertEvents WHERE Monitor = $mon AND Subject = $sub;";
+                    var pMon = delCmd.CreateParameter(); pMon.ParameterName = "$mon"; delCmd.Parameters.Add(pMon);
+                    var pSub = delCmd.CreateParameter(); pSub.ParameterName = "$sub"; delCmd.Parameters.Add(pSub);
+
+                    foreach (var (monitor, subject) in orphaned)
+                    {
+                        pMon.Value = monitor;
+                        pSub.Value = subject;
+                        delCmd.ExecuteNonQuery();
+                    }
+
+                    tx.Commit();
+                }
+
+                _logger.LogInformation(Strings.Log_PrunedOrphanedSeries,
+                    orphaned.Count, string.Join(", ", orphaned.Select(o => $"{o.Monitor}/{o.Subject}")));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, Strings.Log_PruneOrphanedSeriesFailed);
+            }
         }
     }
 

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using ResourceAlerter.Alerting;
 using ResourceAlerter.Configuration;
 using ResourceAlerter.Data;
+using ResourceAlerter.Localization;
 using ResourceAlerter.Monitors;
 
 namespace ResourceAlerter.Reporting;
@@ -63,13 +64,13 @@ public sealed class DailySummaryService
         var sent = await _alertSender.SendAsync(new AlertMessage
         {
             Kind = AlertKind.DailySummary,
-            Subject = $"[{_machineName}] Daily summary {summaryDate:yyyy-MM-dd} — {alerts.Count} alert(s)",
+            Subject = Strings.Subject_DailySummary(_machineName, summaryDate, alerts.Count),
             Body = body,
             Attachments = attachments,
         }, cancellationToken);
 
-        _logger.LogInformation("Daily summary for {Date}: {Result} ({Alerts} alerts, {Attachments} attachments)",
-            summaryDate, sent ? "sent" : "FAILED to send", alerts.Count, attachments.Count);
+        _logger.LogInformation(Strings.Log_DailySummaryResult,
+            summaryDate, sent ? Strings.Log_Sent : Strings.Log_FailedToSend, alerts.Count, attachments.Count);
 
         return sent;
     }
@@ -91,13 +92,15 @@ public sealed class DailySummaryService
                                 a.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase))
                     .Select(a => a.StartedAt);
 
-                var jpeg = ChartRenderer.RenderSeriesJpeg($"{monitor} — {subject} (last 24h)", unit, samples, seriesAlerts);
+                var chartTitle = $"{Strings.MonitorDisplayName(monitor)} — {Strings.SubjectDisplayName(monitor, subject)} " +
+                                  Strings.T("(últimas 24h)", "(last 24h)");
+                var jpeg = ChartRenderer.RenderSeriesJpeg(chartTitle, unit, samples, seriesAlerts);
                 var safeName = $"{monitor}_{subject}".Replace(':', '_').Replace('\\', '_').Replace('/', '_').Replace(' ', '_');
                 attachments.Add(new MailAttachment($"{safeName}.jpg", jpeg, "image/jpeg"));
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to render chart for {Monitor}/{Subject}", monitor, subject);
+                _logger.LogWarning(ex, Strings.Log_ChartRenderFailed, monitor, subject);
             }
         }
     }
@@ -111,7 +114,7 @@ public sealed class DailySummaryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to attach the hardware report");
+            _logger.LogWarning(ex, Strings.Log_HwReportAttachFailed);
         }
     }
 
@@ -135,41 +138,40 @@ public sealed class DailySummaryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to attach the day's log file(s)");
+            _logger.LogWarning(ex, Strings.Log_LogAttachFailed);
         }
     }
 
     private string BuildBody(DateTime summaryDate, DateTimeOffset from, DateTimeOffset to, IReadOnlyList<AlertEventRecord> alerts)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Machine: {_machineName}");
-        sb.AppendLine($"Version: {AppInfo.Version}");
-        sb.AppendLine($"Daily summary for: {summaryDate:yyyy-MM-dd}");
-        sb.AppendLine($"Period: {from.LocalDateTime:yyyy-MM-dd HH:mm} — {to.LocalDateTime:yyyy-MM-dd HH:mm}");
+        sb.AppendLine($"{Strings.Label_Machine}: {_machineName}");
+        sb.AppendLine($"{Strings.Label_Version}: {AppInfo.Version}");
+        sb.AppendLine($"{Strings.DailySummary_For}: {summaryDate:yyyy-MM-dd}");
+        sb.AppendLine($"{Strings.DailySummary_Period}: {from.LocalDateTime:yyyy-MM-dd HH:mm} — {to.LocalDateTime:yyyy-MM-dd HH:mm}");
         sb.AppendLine();
 
         if (alerts.Count == 0)
         {
-            sb.AppendLine("No alerts in the last 24 hours.");
+            sb.AppendLine(Strings.DailySummary_NoAlerts);
         }
         else
         {
-            sb.AppendLine($"Alerts in the last 24 hours ({alerts.Count}):");
+            sb.AppendLine(Strings.DailySummary_AlertsHeader(alerts.Count));
             foreach (var alert in alerts)
             {
                 var duration = alert.ResolvedAt is null
-                    ? "STILL ACTIVE"
+                    ? Strings.Word_StillActive
                     : FormatDuration(alert.ResolvedAt.Value - alert.StartedAt);
-                sb.AppendLine($"  - {alert.StartedAt.LocalDateTime:HH:mm:ss} {alert.Monitor}/{alert.Subject}: " +
-                              $"{alert.DetectedValue} (threshold {alert.Threshold}) — {duration}");
+                var monitorDisplay = Strings.MonitorDisplayName(alert.Monitor);
+                var subjectDisplay = Strings.SubjectDisplayName(alert.Monitor, alert.Subject);
+                sb.AppendLine($"  - {alert.StartedAt.LocalDateTime:HH:mm:ss} {monitorDisplay}/{subjectDisplay}: " +
+                              $"{alert.DetectedValue} ({Strings.Word_Threshold} {alert.Threshold}) — {duration}");
             }
         }
 
         sb.AppendLine();
-        sb.AppendLine("Attached: one chart per monitored variable (red vertical lines mark alert starts), the " +
-                      "day's log file(s), and hardware-report.txt — the full LibreHardwareMonitor diagnostic " +
-                      "dump for this machine (motherboard/BIOS model plus every sensor it exposes), for " +
-                      "planning which sensors to support next.");
+        sb.AppendLine(Strings.DailySummary_AttachedFooter);
 
         return sb.ToString();
     }

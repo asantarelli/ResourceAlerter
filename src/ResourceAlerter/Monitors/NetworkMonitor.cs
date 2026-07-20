@@ -2,6 +2,7 @@ using System.Net.NetworkInformation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -77,11 +78,11 @@ public sealed class NetworkMonitor : IHealthMonitor
         {
             Subject = target,
             InRange = !_currentlyOutOfRange,
-            DisplayValue = $"{losses}/{_window.Count} losses in window" +
-                            (outageDuration > TimeSpan.Zero ? $", outage {outageDuration.TotalSeconds:F0}s" : ""),
+            DisplayValue = Strings.Network_LossesInWindow(losses, _window.Count) +
+                            (outageDuration > TimeSpan.Zero ? Strings.Network_Outage(outageDuration.TotalSeconds) : ""),
             NumericValue = losses,
             Unit = $"losses/{_options.WindowSize}",
-            DisplayThreshold = $">{_options.MaxLossesInWindow} losses/{_options.WindowSize} or >{_options.MaxConsecutiveOutageSeconds}s outage",
+            DisplayThreshold = Strings.Network_Threshold(_options.MaxLossesInWindow, _options.WindowSize, _options.MaxConsecutiveOutageSeconds),
         };
     }
 
@@ -94,7 +95,7 @@ public sealed class NetworkMonitor : IHealthMonitor
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Ping to {Target} failed", target);
+            _logger.LogDebug(ex, Strings.Log_PingFailed, target);
             return false;
         }
     }
@@ -117,16 +118,16 @@ public sealed class NetworkMonitor : IHealthMonitor
 
             if (gateway is not null)
             {
-                _logger.LogInformation("Network monitor auto-detected default gateway {Gateway}", gateway);
+                _logger.LogInformation(Strings.Log_GatewayDetected, gateway);
                 return gateway.ToString();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to auto-detect default gateway; falling back to {Fallback}", _options.FallbackHost);
+            _logger.LogWarning(ex, Strings.Log_GatewayDetectFailed, _options.FallbackHost);
         }
 
-        _logger.LogInformation("Network monitor could not detect a default gateway; using fallback host {Fallback}", _options.FallbackHost);
+        _logger.LogInformation(Strings.Log_NoGatewayUsingFallback, _options.FallbackHost);
         return _options.FallbackHost;
     }
 }

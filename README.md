@@ -299,3 +299,9 @@ Still to verify per-machine before rollout (do this on **each** server, hardware
   you don't even want it listed as "not monitored" in the startup mail): set
   `Monitoring.<Name>.Enabled` to `false`. Note missing sensors already send no mail on their
   own — this is only for suppressing the informational log line and startup-mail listing.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party components (LibreHardwareMonitorLib, SQLite,
+ScottPlot, and others) are used under their own licenses; see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

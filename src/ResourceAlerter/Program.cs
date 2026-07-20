@@ -4,6 +4,7 @@ using ResourceAlerter;
 using ResourceAlerter.Alerting;
 using ResourceAlerter.Configuration;
 using ResourceAlerter.Data;
+using ResourceAlerter.Localization;
 using ResourceAlerter.Logging;
 using ResourceAlerter.Monitors;
 using ResourceAlerter.Reporting;
@@ -45,6 +46,14 @@ builder.Services.Configure<GeneralOptions>(builder.Configuration.GetSection(Gene
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
 
+// Set once, up front, so every mail/Discord alert built anywhere downstream (Worker,
+// AlertStateTracker, DailySummaryService, the monitors' DisplayValue/DisplayThreshold text)
+// comes out in the right language from the very first cycle. Internal logs are unaffected —
+// Strings only covers user-facing text, on purpose.
+var generalOptionsForLanguage = new GeneralOptions();
+builder.Configuration.GetSection(GeneralOptions.SectionName).Bind(generalOptionsForLanguage);
+Strings.CurrentLanguage = generalOptionsForLanguage.Language;
+
 var fileLoggingOptions = new FileLoggingOptions();
 builder.Configuration.GetSection(FileLoggingOptions.SectionName).Bind(fileLoggingOptions);
 builder.Logging.AddProvider(new FileLoggerProvider(fileLoggingOptions));
@@ -84,12 +93,12 @@ if (args.Contains("--send-summary"))
     {
         var summary = host.Services.GetRequiredService<DailySummaryService>();
         var sent = await summary.SendAsync(DateTimeOffset.Now, CancellationToken.None);
-        Console.WriteLine(sent ? "Daily summary mail sent." : "Daily summary mail FAILED to send (check logs).");
+        Console.WriteLine(sent ? Strings.Cli_SummarySentOk : Strings.Cli_SummarySentFailed);
         Environment.ExitCode = sent ? 0 : 1;
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Daily summary failed: {ex.Message}");
+        Console.WriteLine(Strings.Cli_SummaryFailed(ex.Message));
         Environment.ExitCode = 1;
     }
     return;
@@ -99,7 +108,7 @@ host.Run();
 
 static void ListSensors()
 {
-    Console.WriteLine("Opening LibreHardwareMonitor (run this elevated / as Administrator for accurate results)...");
+    Console.WriteLine(Strings.Cli_OpeningHardwareMonitor);
     Console.WriteLine();
 
     var computer = new Computer { IsCpuEnabled = true, IsMotherboardEnabled = true };
@@ -129,5 +138,5 @@ static void ListSensors()
 
     computer.Close();
     Console.WriteLine();
-    Console.WriteLine("Done. Use the sensor names above to adjust Monitoring.Voltage.NominalRails in appsettings.<MACHINE-NAME>.json if a rail isn't matching.");
+    Console.WriteLine(Strings.Cli_ListSensorsDone);
 }

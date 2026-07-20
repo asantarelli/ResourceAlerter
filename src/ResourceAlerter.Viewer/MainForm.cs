@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ResourceAlerter.Localization;
 using ScottPlot.WinForms;
 
 namespace ResourceAlerter.Viewer;
@@ -25,7 +26,7 @@ public sealed class MainForm : Form
     {
         _reader = reader;
 
-        Text = $"ResourceAlerter Viewer — {Environment.MachineName}";
+        Text = Strings.Viewer_Title(Environment.MachineName);
         Width = 1000;
         Height = 600;
         StartPosition = FormStartPosition.CenterScreen;
@@ -50,10 +51,10 @@ public sealed class MainForm : Form
         };
         _seriesCombo.SelectedIndexChanged += (_, _) => LoadSelectedSeries();
 
-        _refreshButton = new Button { Text = "Refrescar", Left = 340, Top = 8, Width = 90 };
+        _refreshButton = new Button { Text = Strings.Viewer_Refresh, Left = 340, Top = 8, Width = 90 };
         _refreshButton.Click += (_, _) => Refresh(fullReload: true); // also picks up newly-recorded series
 
-        _sendSummaryButton = new Button { Text = "Enviar resumen de hoy", Left = 440, Top = 8, Width = 160 };
+        _sendSummaryButton = new Button { Text = Strings.Viewer_SendTodaySummary, Left = 440, Top = 8, Width = 160 };
         _sendSummaryButton.Click += async (_, _) => await SendTodaySummaryAsync();
 
         _currentValueLabel = new Label
@@ -72,7 +73,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             Font = new Font(Font.FontFamily, 7.5f, FontStyle.Regular),
             ForeColor = Color.Gray,
-            Text = $"Auto-refresh every {AutoRefreshInterval.TotalSeconds:F0}s",
+            Text = Strings.Viewer_AutoRefreshEvery(AutoRefreshInterval.TotalSeconds),
         };
 
         // Dock (not Anchor+manual Left) so this doesn't depend on topPanel's width being known
@@ -81,7 +82,7 @@ public sealed class MainForm : Form
         // place (that's why this button wasn't visible).
         _settingsButton = new Button
         {
-            Text = "Configuración",
+            Text = Strings.Viewer_Settings,
             Width = 110,
             Dock = DockStyle.Right,
         };
@@ -124,13 +125,13 @@ public sealed class MainForm : Form
         var exePath = Path.Combine(AppContext.BaseDirectory, "ResourceAlerter.exe");
         if (!File.Exists(exePath))
         {
-            MessageBox.Show($"No se encontró {exePath}. ¿Está instalado el servicio en esta misma carpeta?",
+            MessageBox.Show(Strings.Viewer_ExeNotFound(exePath),
                 "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         _sendSummaryButton.Enabled = false;
-        _sendSummaryButton.Text = "Enviando...";
+        _sendSummaryButton.Text = Strings.Viewer_Sending;
         try
         {
             var psi = new ProcessStartInfo(exePath, "--send-summary")
@@ -140,18 +141,18 @@ public sealed class MainForm : Form
                 WorkingDirectory = AppContext.BaseDirectory,
             };
 
-            using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar el proceso.");
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException(Strings.Viewer_StartProcessFailed);
             await process.WaitForExitAsync();
 
             if (process.ExitCode == 0)
             {
-                MessageBox.Show("El resumen de hoy se envió correctamente.",
+                MessageBox.Show(Strings.Viewer_SummarySentOk,
                     "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {
                 MessageBox.Show(
-                    "El envío falló. Revisá el log del servicio (logs\\resourcealerter-*.log, carpeta de instalación) para el detalle.",
+                    Strings.Viewer_SummarySendFailed,
                     "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
@@ -161,13 +162,13 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo enviar el resumen:\r\n\r\n{ex.Message}",
+            MessageBox.Show(Strings.Viewer_SummarySendError(ex.Message),
                 "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
             _sendSummaryButton.Enabled = true;
-            _sendSummaryButton.Text = "Enviar resumen de hoy";
+            _sendSummaryButton.Text = Strings.Viewer_SendTodaySummary;
         }
     }
 
@@ -185,7 +186,7 @@ public sealed class MainForm : Form
         {
             if (!_reader.DatabaseExists())
             {
-                _currentValueLabel.Text = "Base de datos no encontrada — ¿está corriendo el servicio?";
+                _currentValueLabel.Text = Strings.Viewer_DatabaseNotFound;
                 return;
             }
 
@@ -221,7 +222,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            _currentValueLabel.Text = $"Error: {ex.Message}";
+            _currentValueLabel.Text = Strings.Viewer_Error(ex.Message);
         }
     }
 
@@ -238,8 +239,8 @@ public sealed class MainForm : Form
             var alerts = _reader.GetAlerts24h(series);
 
             _currentValueLabel.Text = latest is null
-                ? "Sin datos registrados"
-                : $"{latest.Value:F2} {series.Unit} — {latest.Timestamp.LocalDateTime:yyyy-MM-dd HH:mm:ss}";
+                ? Strings.Viewer_NoDataRecorded
+                : $"{Strings.FormatNumber(latest.Value, "F2")} {series.Unit} — {latest.Timestamp.LocalDateTime:yyyy-MM-dd HH:mm:ss}";
 
             var plot = _plot.Plot;
             plot.Clear();
@@ -266,7 +267,7 @@ public sealed class MainForm : Form
             }
 
             plot.Axes.DateTimeTicksBottom();
-            plot.Title($"{series} — últimas 24 horas");
+            plot.Title(Strings.Viewer_Last24Hours(series.ToString()));
             if (!string.IsNullOrEmpty(series.Unit))
             {
                 plot.YLabel(series.Unit);
@@ -277,7 +278,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            _currentValueLabel.Text = $"Error: {ex.Message}";
+            _currentValueLabel.Text = Strings.Viewer_Error(ex.Message);
         }
     }
 }

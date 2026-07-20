@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -70,28 +71,28 @@ public sealed class MemoryMonitor : IHealthMonitor
             {
                 new MonitorResult
                 {
-                    Subject = "Physical RAM",
+                    Subject = Strings.Memory_SubjectKey,
                     InRange = inRange,
-                    DisplayValue = $"{usedPercent:F1}% used ({FormatBytes(total - available)} / {FormatBytes(total)})",
+                    DisplayValue = Strings.Memory_Used(usedPercent, FormatBytes(total - available), FormatBytes(total)),
                     NumericValue = usedPercent,
-                    Unit = "% used",
-                    DisplayThreshold = $"{_options.AlertThresholdPercent}% (recovery below {_options.RecoveryThresholdPercent}%)",
+                    Unit = "%",
+                    DisplayThreshold = $"{Strings.FormatNumber(_options.AlertThresholdPercent)}% {Strings.Monitor_RecoveryBelow(_options.RecoveryThresholdPercent)}",
                 },
             };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read memory status");
+            _logger.LogWarning(ex, Strings.Log_MemoryReadFailed);
             return new[]
             {
                 new MonitorResult
                 {
-                    Subject = "Physical RAM",
+                    Subject = Strings.Memory_SubjectKey,
                     InRange = true,
-                    DisplayValue = "n/a",
-                    DisplayThreshold = $"{_options.AlertThresholdPercent}%",
+                    DisplayValue = Strings.NotAvailable,
+                    DisplayThreshold = $"{Strings.FormatNumber(_options.AlertThresholdPercent)}%",
                     Unavailable = true,
-                    UnavailableReason = "Failed to read physical memory status.",
+                    UnavailableReason = Strings.Unavailable_MemoryStatus,
                 },
             };
         }
@@ -100,6 +101,6 @@ public sealed class MemoryMonitor : IHealthMonitor
     private static string FormatBytes(ulong bytes)
     {
         const double gb = 1024d * 1024 * 1024;
-        return $"{bytes / gb:F1} GB";
+        return $"{Strings.FormatNumber(bytes / gb, "F1")} GB";
     }
 }

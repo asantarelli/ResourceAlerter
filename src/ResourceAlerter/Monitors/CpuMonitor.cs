@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -34,7 +35,7 @@ public sealed class CpuMonitor : IHealthMonitor, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Could not initialize CPU performance counter");
+            _logger.LogError(ex, Strings.Log_CpuCounterInitFailed);
             _counter = null;
         }
     }
@@ -47,12 +48,12 @@ public sealed class CpuMonitor : IHealthMonitor, IDisposable
             {
                 new MonitorResult
                 {
-                    Subject = "Total",
+                    Subject = Strings.Cpu_Subject,
                     InRange = true,
-                    DisplayValue = "n/a",
-                    DisplayThreshold = $"{_options.AlertThresholdPercent}%",
+                    DisplayValue = Strings.NotAvailable,
+                    DisplayThreshold = $"{Strings.FormatNumber(_options.AlertThresholdPercent)}%",
                     Unavailable = true,
-                    UnavailableReason = "Processor performance counter could not be initialized.",
+                    UnavailableReason = Strings.Unavailable_ProcessorCounterInit,
                 },
             };
         }
@@ -64,17 +65,17 @@ public sealed class CpuMonitor : IHealthMonitor, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read CPU counter");
+            _logger.LogWarning(ex, Strings.Log_CpuCounterReadFailed);
             return new[]
             {
                 new MonitorResult
                 {
-                    Subject = "Total",
+                    Subject = Strings.Cpu_Subject,
                     InRange = true,
-                    DisplayValue = "n/a",
-                    DisplayThreshold = $"{_options.AlertThresholdPercent}%",
+                    DisplayValue = Strings.NotAvailable,
+                    DisplayThreshold = $"{Strings.FormatNumber(_options.AlertThresholdPercent)}%",
                     Unavailable = true,
-                    UnavailableReason = "Failed to read the processor performance counter.",
+                    UnavailableReason = Strings.Unavailable_ProcessorCounterRead,
                 },
             };
         }
@@ -89,12 +90,12 @@ public sealed class CpuMonitor : IHealthMonitor, IDisposable
         {
             new MonitorResult
             {
-                Subject = "Total",
+                Subject = Strings.Cpu_Subject,
                 InRange = inRange,
-                DisplayValue = $"{value:F1}%",
+                DisplayValue = $"{Strings.FormatNumber(value, "F1")}%",
                 NumericValue = value,
                 Unit = "%",
-                DisplayThreshold = $"{_options.AlertThresholdPercent}% (recovery below {_options.RecoveryThresholdPercent}%)",
+                DisplayThreshold = $"{Strings.FormatNumber(_options.AlertThresholdPercent)}% {Strings.Monitor_RecoveryBelow(_options.RecoveryThresholdPercent)}",
             },
         };
     }

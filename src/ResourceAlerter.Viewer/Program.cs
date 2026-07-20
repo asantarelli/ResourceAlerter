@@ -1,3 +1,5 @@
+using ResourceAlerter.Localization;
+
 namespace ResourceAlerter.Viewer;
 
 internal static class Program
@@ -15,6 +17,12 @@ internal static class Program
         try
         {
             ApplicationConfiguration.Initialize();
+
+            // Same file the "Configuración" button edits — read here too, before building any
+            // UI, so the Viewer opens in whatever language was last saved (service and Viewer
+            // always agree, since it's the same appsettings.json).
+            var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            Strings.CurrentLanguage = ConfigStore.Load(configPath).General.Language;
 
             // Same default as the service's Database.Path; overridable with a command-line arg
             // (e.g. a shortcut pointing at a copied-over DB from another server).

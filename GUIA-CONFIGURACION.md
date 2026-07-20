@@ -19,6 +19,7 @@ aplicar hasta el próximo reinicio del servicio.
 |---|---|
 | Nombre de máquina (mails/logs) | El nombre que aparece en el asunto y cuerpo de los mails (`[NombreMáquina] ALERT: ...`) y en los logs. Vacío = usa el nombre real de Windows. **No afecta** el archivo `appsettings.<NOMBRE-REAL-WINDOWS>.json` de overrides por servidor — ese siempre usa el nombre real del sistema operativo, sin importar lo que pongas acá. |
 | Intervalo de sondeo (segundos) | Cada cuánto se revisan todos los monitores (CPU, memoria, disco, etc). Default: 10 segundos. |
+| Idioma (interfaz y alertas) | Español o English. Controla el idioma de la interfaz del Viewer, de **todos** los mails/Discord (asuntos, cuerpos, recordatorios, resumen diario) y también de los logs internos (`logs\resourcealerter-*.log`) — esos archivos se adjuntan al mail de resumen diario, así que también los puede llegar a ver el cliente. Útil si tenés clientes que solo hablan español y necesitan entender tanto las alertas como los logs sin traducir nada. La interfaz del Viewer toma el idioma nuevo la próxima vez que se abre; los mails/Discord/logs lo toman al reiniciar el servicio. Las trazas de excepciones (`Exception`/stack trace) dentro de los logs quedan siempre en inglés — son mensajes del framework .NET, no traducibles. |
 
 ---
 

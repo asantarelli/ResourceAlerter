@@ -11,4 +11,11 @@ public sealed class GeneralOptions
     /// override file gets loaded; that always uses the real OS computer name.
     /// </summary>
     public string? MachineName { get; set; }
+
+    /// <summary>
+    /// Language for the Viewer UI and every mail/Discord alert: "es" (Spanish) or "en" (English).
+    /// Does NOT affect internal file/console logs, which stay in English regardless (technical
+    /// diagnostics, not something sent to end users). See ResourceAlerter.Localization.Strings.
+    /// </summary>
+    public string Language { get; set; } = "es";
 }

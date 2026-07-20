@@ -3,6 +3,7 @@ using System.Net.Mail;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Alerting;
 
@@ -25,7 +26,7 @@ public sealed class SmtpAlertSender : IAlertSender
     {
         if (_options.Recipients.Count == 0)
         {
-            _logger.LogWarning("No SMTP recipients configured; dropping alert '{Subject}'", message.Subject);
+            _logger.LogWarning(Strings.Log_NoRecipients, message.Subject);
             return false;
         }
 
@@ -34,14 +35,14 @@ public sealed class SmtpAlertSender : IAlertSender
             try
             {
                 await SendOnceAsync(message, cancellationToken);
-                _logger.LogInformation("Alert mail sent: {Subject}", message.Subject);
+                _logger.LogInformation(Strings.Log_MailSent, message.Subject);
                 return true;
             }
             catch (Exception ex) when (attempt < _options.RetryCount)
             {
                 var delay = TimeSpan.FromSeconds(_options.RetryBackoffSeconds * attempt);
                 _logger.LogWarning(ex,
-                    "Failed to send alert mail (attempt {Attempt}/{Max}): {Subject}. Retrying in {Delay}s.",
+                    Strings.Log_MailRetrying,
                     attempt, _options.RetryCount, message.Subject, delay.TotalSeconds);
                 try
                 {
@@ -55,7 +56,7 @@ public sealed class SmtpAlertSender : IAlertSender
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "Failed to send alert mail after {Attempts} attempts: {Subject}. Giving up.",
+                    Strings.Log_MailGivenUp,
                     attempt, message.Subject);
                 return false;
             }

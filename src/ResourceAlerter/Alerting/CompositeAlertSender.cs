@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Alerting;
 
@@ -34,7 +35,7 @@ public sealed class CompositeAlertSender : IAlertSender
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Discord notification failed unexpectedly for '{Subject}'", message.Subject);
+                _logger.LogWarning(ex, Strings.Log_DiscordUnexpectedFail, message.Subject);
             }
         }
 

@@ -3,6 +3,7 @@ using LibreHardwareMonitor.Hardware;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -35,7 +36,7 @@ public sealed class VoltageMonitor : IHealthMonitor
         if (!_accessor.IsAvailable)
         {
             return _options.NominalRails.Keys
-                .Select(rail => Unavailable(rail, "LibreHardwareMonitor could not open (driver/privilege issue)."))
+                .Select(rail => Unavailable(rail, Strings.Unavailable_HardwareMonitorClosed))
                 .ToList();
         }
 
@@ -50,7 +51,7 @@ public sealed class VoltageMonitor : IHealthMonitor
 
             if (match.Sensor is null)
             {
-                results.Add(Unavailable(railName, "No matching voltage sensor found on this hardware."));
+                results.Add(Unavailable(railName, Strings.Unavailable_NoVoltageSensor));
                 continue;
             }
 
@@ -67,10 +68,10 @@ public sealed class VoltageMonitor : IHealthMonitor
             {
                 Subject = railName,
                 InRange = !isOut,
-                DisplayValue = $"{value:F2}V ({deviation:P1} off nominal)",
+                DisplayValue = Strings.Voltage_OffNominal(value, deviation),
                 NumericValue = value,
                 Unit = "V",
-                DisplayThreshold = $"{nominal}V ±{_options.AllowedDeviationFraction:P0}",
+                DisplayThreshold = $"{Strings.FormatNumber(nominal)}V ±{Strings.FormatPercent(_options.AllowedDeviationFraction)}",
             });
         }
 
@@ -105,8 +106,8 @@ public sealed class VoltageMonitor : IHealthMonitor
     {
         Subject = railName,
         InRange = true,
-        DisplayValue = "n/a",
-        DisplayThreshold = "n/a",
+        DisplayValue = Strings.NotAvailable,
+        DisplayThreshold = Strings.NotAvailable,
         Unavailable = true,
         UnavailableReason = reason,
     };

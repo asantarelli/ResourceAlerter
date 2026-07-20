@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using ResourceAlerter.Alerting;
 using ResourceAlerter.Configuration;
 using ResourceAlerter.Data;
+using ResourceAlerter.Localization;
 using ResourceAlerter.Monitors;
 using ResourceAlerter.Reporting;
 
@@ -65,13 +66,14 @@ public sealed class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("ResourceAlerter v{Version} starting on {Machine}. Polling interval: {Interval}s. Monitors: {Monitors}",
+        _logger.LogInformation(Strings.Log_WorkerStarting,
             AppInfo.Version, _machineName, _options.PollingIntervalSeconds, string.Join(", ", _monitors.Select(m => m.Name)));
 
         // Probe once up front so the startup mail can report exactly what's actually being
         // watched on this machine (and what got skipped for lack of a sensor), then feed those
         // same results into the trackers as the first real cycle instead of checking twice.
         var initialCycle = ProbeAllMonitors();
+        PruneOrphanedSeries(initialCycle);
         await SendStartupNotificationAsync(initialCycle, stoppingToken);
         await ProcessCycleAsync(initialCycle, stoppingToken);
 
@@ -107,11 +109,37 @@ public sealed class Worker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Monitor {Monitor} threw during Check(); skipping this cycle", monitor.Name);
+                _logger.LogError(ex, Strings.Log_MonitorCheckThrew, monitor.Name);
             }
         }
 
         return cycle;
+    }
+
+    /// <summary>
+    /// Discards recorded data for subjects the current configuration no longer produces (e.g. a
+    /// disk drive removed from Disk.Drives) so the Viewer stops showing frozen, never-updating
+    /// entries next to the real one. Only monitors present in <paramref name="cycle"/> (i.e.
+    /// still enabled) are touched — see <see cref="DataRecorder.PruneOrphanedSeries"/>.
+    ///
+    /// A monitor is skipped entirely (left untouched this run) if any of its results this cycle
+    /// came back Unavailable: an unavailable read can't reliably tell us the full subject set
+    /// the config *should* produce — e.g. TemperatureMonitor's total-failure fallback reports a
+    /// generic "CPU" subject instead of "CPU Package"/"CPU (avg of cores)", which would look
+    /// like a config change and wrongly prune real history over a transient sensor hiccup right
+    /// at startup. A real config change gets picked up on the next successful restart instead —
+    /// a one-cycle delay beats risking data loss.
+    /// </summary>
+    private void PruneOrphanedSeries(List<(IHealthMonitor Monitor, IReadOnlyList<MonitorResult> Results)> cycle)
+    {
+        var activeSubjectsByMonitor = cycle
+            .Where(c => c.Results.All(r => !r.Unavailable))
+            .ToDictionary(
+                c => c.Monitor.Name,
+                c => c.Results.Select(r => r.Subject).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
+
+        _dataRecorder.PruneOrphanedSeries(activeSubjectsByMonitor);
     }
 
     private async Task ProcessCycleAsync(List<(IHealthMonitor Monitor, IReadOnlyList<MonitorResult> Results)> cycle, CancellationToken stoppingToken)
@@ -139,7 +167,7 @@ public sealed class Worker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed processing alert state for {Monitor}/{Subject}", monitor.Name, result.Subject);
+                    _logger.LogError(ex, Strings.Log_AlertStateProcessingFailed, monitor.Name, result.Subject);
                 }
             }
         }
@@ -162,7 +190,7 @@ public sealed class Worker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to build/send the daily summary mail");
+            _logger.LogError(ex, Strings.Log_DailySummaryFailed);
         }
     }
 
@@ -174,29 +202,24 @@ public sealed class Worker : BackgroundService
         {
             var recordingWarning = _dataRecorder.IsAvailable
                 ? ""
-                : $"\r\n*** WARNING: data recording (SQLite) failed to start: {_dataRecorder.InitializationError} ***\r\n" +
-                  "*** Charts, the Viewer app, and the daily summary will have no data until this is fixed. ***\r\n" +
-                  "*** Check the log for the full exception; this usually means a native-library packaging problem. ***\r\n";
-
-            var subjectPrefix = _dataRecorder.IsAvailable ? "" : "WARNING: ";
+                : Strings.Startup_RecordingWarning(_dataRecorder.InitializationError);
 
             await _alertSender.SendAsync(new AlertMessage
             {
                 Kind = AlertKind.ServiceStarted,
-                Subject = $"[{_machineName}] {subjectPrefix}ResourceAlerter service started",
+                Subject = Strings.Subject_ServiceStarted(_machineName, warning: !_dataRecorder.IsAvailable),
                 Body =
-                    $"Machine: {_machineName}\r\n" +
-                    $"Version: {AppInfo.Version}\r\n" +
-                    $"Started at: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}\r\n" +
+                    $"{Strings.Label_Machine}: {_machineName}\r\n" +
+                    $"{Strings.Label_Version}: {AppInfo.Version}\r\n" +
+                    $"{Strings.Label_StartedAt}: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}\r\n" +
                     recordingWarning + "\r\n" +
                     BuildMonitoringSummary(initialCycle) +
-                    "\r\nThis is an informational message sent whenever the service starts " +
-                    "(including after a reboot) — no action required unless it was unexpected.",
+                    "\r\n" + Strings.Startup_Footer,
             }, stoppingToken);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send startup notification mail");
+            _logger.LogWarning(ex, Strings.Log_StartupNotificationFailed);
         }
     }
 
@@ -207,33 +230,34 @@ public sealed class Worker : BackgroundService
 
         foreach (var (monitor, results) in cycle)
         {
+            var monitorDisplay = Strings.MonitorDisplayName(monitor.Name);
             foreach (var result in results)
             {
-                var label = $"{monitor.Name} ({result.Subject})";
+                var label = $"{monitorDisplay} ({Strings.SubjectDisplayName(monitor.Name, result.Subject)})";
                 if (result.Unavailable)
                 {
                     skipped.Add($"  - {label}: {result.UnavailableReason}");
                 }
                 else
                 {
-                    monitored.Add($"  - {label}: threshold {result.DisplayThreshold}");
+                    monitored.Add($"  - {label}: {Strings.Word_Threshold} {result.DisplayThreshold}");
                 }
             }
         }
 
         var disabled = _monitors
             .Where(m => !m.Options.Enabled)
-            .Select(m => $"  - {m.Name}: disabled in configuration")
+            .Select(m => $"  - {Strings.MonitorDisplayName(m.Name)}: {Strings.Startup_DisabledInConfig}")
             .ToList();
 
         var sb = new StringBuilder();
-        sb.AppendLine("Actively monitoring:");
-        sb.AppendLine(monitored.Count > 0 ? string.Join("\r\n", monitored) : "  (nothing — check configuration)");
+        sb.AppendLine(Strings.Startup_ActivelyMonitoring);
+        sb.AppendLine(monitored.Count > 0 ? string.Join("\r\n", monitored) : Strings.Startup_NothingCheckConfig);
 
         if (skipped.Count > 0 || disabled.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine("Not monitored on this machine (no alerts will be sent for these):");
+            sb.AppendLine(Strings.Startup_NotMonitoredHeader);
             foreach (var line in skipped)
             {
                 sb.AppendLine(line);

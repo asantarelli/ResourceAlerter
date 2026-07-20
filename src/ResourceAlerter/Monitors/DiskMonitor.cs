@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ResourceAlerter.Configuration;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -62,10 +63,10 @@ public sealed class DiskMonitor : IHealthMonitor
                 {
                     Subject = driveLetter,
                     InRange = true,
-                    DisplayValue = "n/a",
-                    DisplayThreshold = $"{_options.FreeSpacePercentThreshold}% / {_options.FreeSpaceAbsoluteGbThreshold} GB",
+                    DisplayValue = Strings.NotAvailable,
+                    DisplayThreshold = $"{Strings.FormatNumber(_options.FreeSpacePercentThreshold)}% / {Strings.FormatNumber(_options.FreeSpaceAbsoluteGbThreshold)} GB",
                     Unavailable = true,
-                    UnavailableReason = "Drive is not ready.",
+                    UnavailableReason = Strings.Unavailable_DriveNotReady,
                 };
             }
 
@@ -82,23 +83,23 @@ public sealed class DiskMonitor : IHealthMonitor
             {
                 Subject = driveLetter,
                 InRange = inRange,
-                DisplayValue = $"{freeGb:F1} GB free ({freePercent:F1}%)",
+                DisplayValue = Strings.Disk_Free(freeGb, freePercent),
                 NumericValue = freeGb,
-                Unit = "GB free",
-                DisplayThreshold = $"below {_options.FreeSpacePercentThreshold}% or {_options.FreeSpaceAbsoluteGbThreshold} GB",
+                Unit = "GB",
+                DisplayThreshold = Strings.Disk_ThresholdBelow(_options.FreeSpacePercentThreshold, _options.FreeSpaceAbsoluteGbThreshold),
             };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read disk usage for {Drive}", driveLetter);
+            _logger.LogWarning(ex, Strings.Log_DiskReadFailed, driveLetter);
             return new MonitorResult
             {
                 Subject = driveLetter,
                 InRange = true,
-                DisplayValue = "n/a",
-                DisplayThreshold = $"{_options.FreeSpacePercentThreshold}% / {_options.FreeSpaceAbsoluteGbThreshold} GB",
+                DisplayValue = Strings.NotAvailable,
+                DisplayThreshold = $"{Strings.FormatNumber(_options.FreeSpacePercentThreshold)}% / {Strings.FormatNumber(_options.FreeSpaceAbsoluteGbThreshold)} GB",
                 Unavailable = true,
-                UnavailableReason = $"Failed to read drive: {ex.Message}",
+                UnavailableReason = Strings.Unavailable_DriveReadFailed(ex.Message),
             };
         }
     }

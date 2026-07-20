@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Viewer;
 
@@ -24,19 +25,18 @@ internal static class ServiceRestarter
                 Verb = "runas",
             };
 
-            using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar el proceso.");
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException(Strings.Viewer_StartProcessFailed);
             await process.WaitForExitAsync();
 
             if (process.ExitCode == 0)
             {
-                MessageBox.Show(owner, "Servicio reiniciado correctamente.",
+                MessageBox.Show(owner, Strings.Viewer_ServiceRestartedOk,
                     "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return true;
             }
 
             MessageBox.Show(owner,
-                "El reinicio del servicio falló. Reiniciálo manualmente desde services.msc o con " +
-                $"'Restart-Service {ServiceName}' en una PowerShell elevada.",
+                Strings.Viewer_ServiceRestartFailed(ServiceName),
                 "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
@@ -47,7 +47,7 @@ internal static class ServiceRestarter
         }
         catch (Exception ex)
         {
-            MessageBox.Show(owner, $"No se pudo reiniciar el servicio:\r\n\r\n{ex.Message}",
+            MessageBox.Show(owner, Strings.Viewer_ServiceRestartError(ex.Message),
                 "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }

@@ -1,5 +1,6 @@
 using LibreHardwareMonitor.Hardware;
 using Microsoft.Extensions.Logging;
+using ResourceAlerter.Localization;
 
 namespace ResourceAlerter.Monitors;
 
@@ -33,8 +34,7 @@ public sealed class HardwareMonitorAccessor : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to open LibreHardwareMonitor; temperature/voltage monitoring will be unavailable. " +
-                                  "The service most likely needs to run as LocalSystem for the sensor driver to load.");
+            _logger.LogError(ex, Strings.Log_HwOpenFailed);
             _opened = false;
         }
     }
@@ -51,7 +51,7 @@ public sealed class HardwareMonitorAccessor : IDisposable
     {
         if (!_opened)
         {
-            return "(LibreHardwareMonitor unavailable on this machine — no report to generate)";
+            return Strings.Log_HwReportUnavailable;
         }
 
         try
@@ -64,8 +64,8 @@ public sealed class HardwareMonitorAccessor : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to generate the hardware report for the daily summary");
-            return $"(hardware report generation failed: {ex.Message})";
+            _logger.LogWarning(ex, Strings.Log_HwReportGenFailed);
+            return Strings.Log_HwReportGenFailedText(ex.Message);
         }
     }
 
@@ -87,7 +87,7 @@ public sealed class HardwareMonitorAccessor : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to enumerate {SensorType} sensors", type);
+            _logger.LogWarning(ex, Strings.Log_SensorEnumFailed, type);
         }
 
         return results;
@@ -128,7 +128,7 @@ public sealed class HardwareMonitorAccessor : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error closing LibreHardwareMonitor computer instance");
+                _logger.LogWarning(ex, Strings.Log_HwCloseError);
             }
         }
     }
