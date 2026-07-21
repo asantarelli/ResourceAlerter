@@ -76,6 +76,26 @@ internal static class FieldFactory
         return nud;
     }
 
+    /// <summary>
+    /// Editable combo box (DropDown, not DropDownList) — pick from the offered options or type
+    /// a value not in the list (e.g. a NIC that's temporarily disconnected and so not currently
+    /// enumerated).
+    /// </summary>
+    public static ComboBox AddCombo(TableLayoutPanel panel, int row, string label, string value, IEnumerable<string> options)
+    {
+        panel.Controls.Add(NewLabel(label), 0, row);
+        var combo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDown,
+            Width = 300,
+            Anchor = AnchorStyles.Left,
+        };
+        combo.Items.AddRange(options.Cast<object>().ToArray());
+        combo.Text = value;
+        panel.Controls.Add(combo, 1, row);
+        return combo;
+    }
+
     public static CheckBox AddCheck(TableLayoutPanel panel, int row, string label, bool value)
     {
         panel.Controls.Add(NewLabel(label), 0, row);

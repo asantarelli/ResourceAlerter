@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ResourceAlerter.Configuration;
 using ResourceAlerter.Localization;
 using static ResourceAlerter.Viewer.FieldFactory;
@@ -207,7 +208,7 @@ public sealed class SettingsForm : Form
     private TabPage BuildMonitorTab(string key, string displayTitle, MonitorOptionsBase options)
     {
         var page = new TabPage(displayTitle);
-        var panel = NewPanel(6);
+        var panel = NewPanel(7);
         var row = 0;
 
         var controls = new MonitorControls { Enabled = AddCheck(panel, row++, Strings.T("Habilitado:", "Enabled:"), options.Enabled) };
@@ -216,7 +217,9 @@ public sealed class SettingsForm : Form
 
         controls.SustainedWindowSeconds = AddNumeric(panel, row++, Strings.T("Ventana sostenida (segundos):", "Sustained window (seconds):"), options.SustainedWindowSeconds, 1, 3600);
         controls.RecoveryWindowSeconds = AddNumeric(panel, row++, Strings.T("Ventana de recuperación (segundos):", "Recovery window (seconds):"), options.RecoveryWindowSeconds, 1, 3600);
-        controls.ReminderIntervalMinutes = AddNumeric(panel, row, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), options.ReminderIntervalMinutes, 1, 1440);
+        controls.ReminderIntervalMinutes = AddNumeric(panel, row++, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), options.ReminderIntervalMinutes, 1, 1440);
+
+        panel.Controls.Add(BuildResetRecordsButton(key), 0, row);
 
         _monitorControls[key] = controls;
         page.Controls.Add(panel);
@@ -249,7 +252,7 @@ public sealed class SettingsForm : Form
     private TabPage BuildDiskTab()
     {
         var page = new TabPage(Strings.T("Disco", "Disk"));
-        var panel = NewPanel(8);
+        var panel = NewPanel(9);
         var disk = _bundle.Monitoring.Disk;
 
         var controls = new MonitorControls { Enabled = AddCheck(panel, 0, Strings.T("Habilitado:", "Enabled:"), disk.Enabled) };
@@ -274,6 +277,7 @@ public sealed class SettingsForm : Form
         };
         panel.Controls.Add(note, 0, 7);
         panel.SetColumnSpan(note, 2);
+        panel.Controls.Add(BuildResetRecordsButton("Disk"), 0, 8);
 
         _monitorControls["Disk"] = controls;
         page.Controls.Add(panel);
@@ -291,6 +295,7 @@ public sealed class SettingsForm : Form
         controls.SustainedWindowSeconds = AddNumeric(panel, 2, Strings.T("Ventana sostenida (segundos):", "Sustained window (seconds):"), temp.SustainedWindowSeconds, 1, 3600);
         controls.RecoveryWindowSeconds = AddNumeric(panel, 3, Strings.T("Ventana de recuperación (segundos):", "Recovery window (seconds):"), temp.RecoveryWindowSeconds, 1, 3600);
         controls.ReminderIntervalMinutes = AddNumeric(panel, 4, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), temp.ReminderIntervalMinutes, 1, 1440);
+        panel.Controls.Add(BuildResetRecordsButton("Temperature"), 0, 5);
 
         _monitorControls["Temperature"] = controls;
         page.Controls.Add(panel);
@@ -300,7 +305,7 @@ public sealed class SettingsForm : Form
     private TabPage BuildVoltageTab()
     {
         var page = new TabPage(Strings.T("Voltaje", "Voltage"));
-        var panel = NewPanel(8);
+        var panel = NewPanel(9);
         var volt = _bundle.Monitoring.Voltage;
 
         var controls = new MonitorControls { Enabled = AddCheck(panel, 0, Strings.T("Habilitado:", "Enabled:"), volt.Enabled) };
@@ -324,6 +329,7 @@ public sealed class SettingsForm : Form
         };
         panel.Controls.Add(note, 0, 7);
         panel.SetColumnSpan(note, 2);
+        panel.Controls.Add(BuildResetRecordsButton("Voltage"), 0, 8);
 
         _monitorControls["Voltage"] = controls;
         page.Controls.Add(panel);
@@ -335,7 +341,7 @@ public sealed class SettingsForm : Form
     private TabPage BuildNetworkTab()
     {
         var page = new TabPage(Strings.T("Red", "Network"));
-        var panel = NewPanel(11);
+        var panel = NewPanel(16);
         var net = _bundle.Monitoring.Network;
 
         var controls = new MonitorControls { Enabled = AddCheck(panel, 0, Strings.T("Habilitado:", "Enabled:"), net.Enabled) };
@@ -346,9 +352,29 @@ public sealed class SettingsForm : Form
         _networkWindowSizeBox = AddNumeric(panel, 5, Strings.T("Tamaño de ventana (cantidad de pings):", "Window size (number of pings):"), net.WindowSize, 1, 100);
         _networkMaxLossesBox = AddNumeric(panel, 6, Strings.T("Máx. pérdidas en la ventana:", "Max losses in window:"), net.MaxLossesInWindow, 0, 100);
         _networkMaxOutageBox = AddNumeric(panel, 7, Strings.T("Máx. corte continuo (segundos):", "Max continuous outage (seconds):"), net.MaxConsecutiveOutageSeconds, 1, 3600);
-        controls.SustainedWindowSeconds = AddNumeric(panel, 8, Strings.T("Ventana sostenida (segundos):", "Sustained window (seconds):"), net.SustainedWindowSeconds, 1, 3600);
-        controls.RecoveryWindowSeconds = AddNumeric(panel, 9, Strings.T("Ventana de recuperación (segundos):", "Recovery window (seconds):"), net.RecoveryWindowSeconds, 1, 3600);
-        _networkReminderBox = AddNumeric(panel, 10, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), net.ReminderIntervalMinutes, 1, 1440);
+        _networkLatencyThresholdBox = AddNumeric(panel, 8, Strings.T("Umbral de latencia (ms):", "Latency threshold (ms):"), net.LatencyThresholdMilliseconds, 1, 60_000);
+        _networkInterfaceNameBox = AddCombo(panel, 9, Strings.T("Interfaz de red (para errores/tráfico):", "Network interface (for errors/traffic):"),
+            net.InterfaceName ?? "", GetLocalInterfaceNames());
+        _networkMaxInterfaceErrorsBox = AddNumeric(panel, 10, Strings.T("Máx. errores de interfaz por ciclo:", "Max interface errors per cycle:"), net.MaxInterfaceErrorsPerInterval, 0, 100_000);
+        controls.SustainedWindowSeconds = AddNumeric(panel, 11, Strings.T("Ventana sostenida (segundos):", "Sustained window (seconds):"), net.SustainedWindowSeconds, 1, 3600);
+        controls.RecoveryWindowSeconds = AddNumeric(panel, 12, Strings.T("Ventana de recuperación (segundos):", "Recovery window (seconds):"), net.RecoveryWindowSeconds, 1, 3600);
+        _networkReminderBox = AddNumeric(panel, 13, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), net.ReminderIntervalMinutes, 1, 1440);
+
+        var note = new Label
+        {
+            Text = Strings.T(
+                "Vacío en \"Interfaz de red\" = no se miden errores/tráfico (los pings de arriba siguen funcionando igual).\n" +
+                "El desplegable lista las interfaces de esta máquina; si no ves la que buscás (ej. está desconectada),\n" +
+                "podés escribir el nombre a mano.",
+                "Empty \"Network interface\" = errors/traffic aren't measured (the pings above still work normally).\n" +
+                "The dropdown lists this machine's interfaces; if you don't see the one you're after (e.g. it's\n" +
+                "unplugged), you can type the name manually."),
+            AutoSize = true,
+            ForeColor = Color.Gray,
+        };
+        panel.Controls.Add(note, 0, 14);
+        panel.SetColumnSpan(note, 2);
+        panel.Controls.Add(BuildResetRecordsButton("Network"), 0, 15);
 
         _monitorControls["Network"] = controls;
         page.Controls.Add(panel);
@@ -356,6 +382,30 @@ public sealed class SettingsForm : Form
     }
 
     private NumericUpDown _networkReminderBox = null!;
+    private NumericUpDown _networkLatencyThresholdBox = null!;
+    private ComboBox _networkInterfaceNameBox = null!;
+    private NumericUpDown _networkMaxInterfaceErrorsBox = null!;
+
+    /// <summary>
+    /// Interface names for the "Network interface" combo — same source as
+    /// <c>--list-network-interfaces</c>, just queried in-process so the dropdown is always
+    /// current without needing to shell out. Any interface the OS knows about is listed
+    /// (including ones that are currently down), so a temporarily-unplugged NIC still shows up.
+    /// </summary>
+    private static List<string> GetLocalInterfaceNames()
+    {
+        try
+        {
+            return System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .Select(nic => nic.Name)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch
+        {
+            return new List<string>(); // combo still works as a free-text field if enumeration fails
+        }
+    }
 
     private TabPage BuildDatabaseTab()
     {
@@ -434,6 +484,9 @@ public sealed class SettingsForm : Form
         _bundle.Monitoring.Network.WindowSize = (int)_networkWindowSizeBox.Value;
         _bundle.Monitoring.Network.MaxLossesInWindow = (int)_networkMaxLossesBox.Value;
         _bundle.Monitoring.Network.MaxConsecutiveOutageSeconds = (int)_networkMaxOutageBox.Value;
+        _bundle.Monitoring.Network.LatencyThresholdMilliseconds = (int)_networkLatencyThresholdBox.Value;
+        _bundle.Monitoring.Network.InterfaceName = string.IsNullOrWhiteSpace(_networkInterfaceNameBox.Text) ? null : _networkInterfaceNameBox.Text.Trim();
+        _bundle.Monitoring.Network.MaxInterfaceErrorsPerInterval = (int)_networkMaxInterfaceErrorsBox.Value;
 
         _bundle.Database.Path = _dbPathBox.Text.Trim();
         _bundle.Database.RetentionDays = (int)_dbRetentionBox.Value;
@@ -450,6 +503,84 @@ public sealed class SettingsForm : Form
         options.SustainedWindowSeconds = (int)controls.SustainedWindowSeconds.Value;
         options.RecoveryWindowSeconds = (int)controls.RecoveryWindowSeconds.Value;
         options.ReminderIntervalMinutes = (int)controls.ReminderIntervalMinutes.Value;
+    }
+
+    /// <summary>
+    /// One button per monitor tab that permanently deletes that monitor's recorded history —
+    /// mainly useful right after an upgrade that changes a monitor's recorded unit (e.g. v4.0.0
+    /// switched Disk from GB to % free), so old and new data don't sit mixed in the same chart,
+    /// without needing to wait out the full retention window. Elevated for the same reason
+    /// "send today's summary" is: the Viewer never touches the database directly (the service is
+    /// the only writer — see DataRecorder's own doc comment), so this shells out to
+    /// ResourceAlerter.exe --reset-records, same pattern as SendTodaySummaryAsync.
+    /// </summary>
+    private Button BuildResetRecordsButton(string monitorInternalName)
+    {
+        var button = new Button
+        {
+            Text = Strings.Viewer_ResetRecords,
+            Width = 160,
+            Anchor = AnchorStyles.Left,
+        };
+        button.Click += async (_, _) => await ResetRecordsAsync(button, monitorInternalName);
+        return button;
+    }
+
+    private async Task ResetRecordsAsync(Button button, string monitorInternalName)
+    {
+        var confirm = MessageBox.Show(
+            Strings.Viewer_ResetRecordsConfirm(Strings.MonitorDisplayName(monitorInternalName)),
+            "ResourceAlerter Viewer", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (confirm != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var exePath = Path.Combine(AppContext.BaseDirectory, "ResourceAlerter.exe");
+        if (!File.Exists(exePath))
+        {
+            MessageBox.Show(Strings.Viewer_ExeNotFound(exePath), "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        var originalText = button.Text;
+        button.Enabled = false;
+        button.Text = Strings.Viewer_ResettingRecords;
+        try
+        {
+            var psi = new ProcessStartInfo(exePath, $"--reset-records {monitorInternalName}")
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = AppContext.BaseDirectory,
+            };
+
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException(Strings.Viewer_StartProcessFailed);
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode == 0)
+            {
+                MessageBox.Show(Strings.Viewer_ResetRecordsDone, "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                MessageBox.Show(Strings.Viewer_ResetRecordsFailed, "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // User declined the UAC elevation prompt — not worth alarming over.
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(Strings.Viewer_ResetRecordsFailed + $"\r\n\r\n{ex.Message}",
+                "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            button.Enabled = true;
+            button.Text = originalText;
+        }
     }
 
     private async Task SaveAsync()

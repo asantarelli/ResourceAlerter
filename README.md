@@ -1,8 +1,9 @@
 # ResourceAlerter
 
 Windows service that watches a server's health — CPU, RAM, CPU temperature, PSU rail
-voltages, disk space, and network microcuts — and e-mails an alert when something goes out
-of range, with no external monitoring infrastructure (no Zabbix/PRTG/Docker/Linux). Built
+voltages, disk space, and network health (packet loss/outages, latency, interface
+errors/traffic) — and e-mails an alert when something goes out of range, with no external
+monitoring infrastructure (no Zabbix/PRTG/Docker/Linux). Built
 with .NET 8 (`Microsoft.Extensions.Hosting` + `Microsoft.Extensions.Hosting.WindowsServices`)
 and [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
 for sensors.
@@ -249,6 +250,38 @@ If a rail truly isn't exposed at all by the chip (e.g. many Nuvoton chips have n
 standby sensor, only a ~3.3V "VSB"/"AVSB" standby rail that isn't the same thing), there's
 nothing to configure — it's silently skipped (see "How it behaves" above) and shows up
 under "not monitored" in the startup mail.
+
+## Diagnosing network interfaces (`--list-network-interfaces`)
+
+`NetworkMonitor` reports two extra subjects — interface error/discard counts and packet
+traffic — read from one specific NIC named in `Monitoring.Network.InterfaceName` (there's no
+safe way to auto-pick "the" interface on a server with several). List the exact names this
+machine exposes (no elevation needed):
+
+```powershell
+.\ResourceAlerter.exe --list-network-interfaces
+```
+
+Use the value from the `Name` column (not the longer hardware description) as
+`Monitoring.Network.InterfaceName`. Leave it empty to skip these two subjects entirely —
+ping-based loss/latency tracking keeps working regardless, since it doesn't depend on a local
+NIC selection.
+
+## Resetting a monitor's recorded history (`--reset-records`)
+
+Each monitor's Settings tab (CPU/Memory/Disk/Temperature/Voltage/Network) has a **Reset
+records** button that permanently deletes every `Samples`/`AlertEvents` row for that monitor —
+mainly useful right after an upgrade that changes what a monitor records (e.g. v4.0.0 switched
+Disk from GB to % free), so old and new data don't sit mixed in the same chart, without waiting
+out the full `Database.RetentionDays` window. It shells out elevated to:
+
+```powershell
+.\ResourceAlerter.exe --reset-records <MonitorName>
+```
+
+`<MonitorName>` is the fixed internal key, not the translated display name: `CPU`, `Memory`,
+`Disk`, `Temperature`, `Voltage`, or `Network`. This only touches recorded history — it never
+touches `appsettings.json` or any other monitor's data, and there's no undo.
 
 ## Testing before you trust it on a real server
 

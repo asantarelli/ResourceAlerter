@@ -11,6 +11,16 @@ Al guardar, te ofrece **reiniciar el servicio** (pide elevación de Windows) par
 se apliquen al toque. Si decís que no, los cambios quedan guardados igual, pero no se van a
 aplicar hasta el próximo reinicio del servicio.
 
+Las solapas de los 6 monitores (CPU, Memoria, Disco, Temperatura, Voltaje, Red) tienen además un
+botón **Reiniciar registros**, que borra permanentemente de la base de datos todo el historial
+guardado de ese monitor (gráficos del Viewer y alertas registradas) — pide confirmación antes de
+borrar, y elevación de Windows (usa el mismo mecanismo que "Guardar y reiniciar servicio"). Sirve
+sobre todo después de actualizar a una versión que cambia cómo se mide algo (por ejemplo, la 4.0.0
+pasó el gráfico de Disco de GB a % libre) para no quedarte con datos viejos y nuevos mezclados en
+el mismo gráfico, en vez de esperar a que se purguen solos por la retención configurada. **No hay
+forma de deshacer esto** — no borra el resto de los monitores ni la configuración, solo el
+historial de esa solapa puntual.
+
 ---
 
 ## General
@@ -107,6 +117,11 @@ Igual que CPU, pero sobre % de RAM física usada.
 | Umbral de espacio libre (GB) | Alerta si el espacio libre baja de esta cantidad absoluta. Se dispara con **cualquiera** de los dos umbrales que se cumpla primero. |
 | Unidades a vigilar | **Vacío = solo la unidad de sistema** (normalmente `C:`). Si escribís una o más acá, **reemplazan** a la de sistema, no se suman. Por ejemplo: poné solo `D:` para vigilar la unidad de temporales/swap en vez de C:, o `C:, D:` para vigilar ambas. |
 
+El mail de alerta siempre muestra ambos datos ("7.0 GB libres (89.3%)"). El **gráfico** del Viewer
+grafica el % libre (no los GB) — así una unidad de 100GB y una de 4TB se leen igual de fácil a
+simple vista. Si actualizaste desde una versión anterior a la 4.0.0, el historial ya grabado en GB
+queda como está (no se puede convertir retroactivamente); las muestras nuevas ya se graban en %.
+
 ## Temperatura
 
 | Campo | Notas |
@@ -152,6 +167,11 @@ ese caso no hay nada para configurar, es una limitación del hardware/chip.
 | Tamaño de ventana | Cuántos pings recientes se tienen en cuenta para calcular pérdidas. |
 | Máx. pérdidas en la ventana | Si se superan estas pérdidas dentro de la ventana, alerta. |
 | Máx. corte continuo (segundos) | Si no hay respuesta durante más de estos segundos seguidos, alerta (aunque no se haya superado el máximo de pérdidas). |
+| Umbral de latencia (ms) | Alerta si el tiempo de respuesta del ping supera este valor. Se mide en el mismo ping que ya se usa para pérdidas, sin costo extra. |
+| Interfaz de red (para errores/tráfico) | Placa de red a monitorear para errores y volumen de tráfico. Es un desplegable que se completa solo con las placas de esta máquina (elegí de la lista, o escribí el nombre a mano si la que buscás no aparece, por ejemplo por estar desconectada). Vacío = esas dos mediciones se desactivan (los pings de arriba siguen funcionando igual). Un servidor con varias placas necesita la correcta — no hay forma segura de adivinarla. |
+| Máx. errores de interfaz por ciclo | Alerta si la placa de red configurada arriba acumula más de esta cantidad de errores/paquetes descartados entre un sondeo y el siguiente. |
+
+El "Tráfico" (cantidad de paquetes) se registra siempre a modo informativo (para el gráfico), sin umbral de alerta — el volumen normal varía demasiado entre servidores como para tener un valor único que tenga sentido en todos los casos.
 
 ---
 

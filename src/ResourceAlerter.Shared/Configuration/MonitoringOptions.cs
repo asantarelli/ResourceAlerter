@@ -88,6 +88,22 @@ public sealed class NetworkOptions : MonitorOptionsBase
 
     /// <summary>Alert if this many consecutive seconds pass with no successful reply.</summary>
     public int MaxConsecutiveOutageSeconds { get; set; } = 30;
+
+    /// <summary>Alert if a ping's round-trip time exceeds this many milliseconds.</summary>
+    public int LatencyThresholdMilliseconds { get; set; } = 200;
+
+    /// <summary>
+    /// Name of the network interface to read error/discard and packet counters from (e.g.
+    /// "Ethernet" — matches <c>NetworkInterface.Name</c>, not the longer hardware description).
+    /// Run <c>ResourceAlerter.exe --list-network-interfaces</c> (elevated not required) to see
+    /// exact names on a given machine. Null/empty or not found = those two subjects are silently
+    /// skipped (same "unavailable sensor" pattern as a missing voltage rail) — ping-based
+    /// losses/latency keep working regardless, since they don't depend on a specific local NIC.
+    /// </summary>
+    public string? InterfaceName { get; set; } = "Ethernet";
+
+    /// <summary>Alert if interface errors+discards (sent+received) in one poll exceed this.</summary>
+    public int MaxInterfaceErrorsPerInterval { get; set; } = 5;
 }
 
 public sealed class DiskOptions : MonitorOptionsBase

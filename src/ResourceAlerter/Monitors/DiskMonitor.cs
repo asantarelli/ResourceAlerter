@@ -84,8 +84,8 @@ public sealed class DiskMonitor : IHealthMonitor
                 Subject = driveLetter,
                 InRange = inRange,
                 DisplayValue = Strings.Disk_Free(freeGb, freePercent),
-                NumericValue = freeGb,
-                Unit = "GB",
+                NumericValue = freePercent,
+                Unit = "%",
                 DisplayThreshold = Strings.Disk_ThresholdBelow(_options.FreeSpacePercentThreshold, _options.FreeSpaceAbsoluteGbThreshold),
             };
         }

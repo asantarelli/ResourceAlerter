@@ -180,6 +180,35 @@ public static class Strings
             ? $">{maxLosses} pérdidas/{windowSize} o >{maxOutageSeconds}s de corte"
             : $">{maxLosses} losses/{windowSize} or >{maxOutageSeconds}s outage";
 
+    /// <summary>Fixed/English Subject keys — see <see cref="Memory_SubjectKey"/> for why.</summary>
+    public const string Network_LatencySubjectKey = "Latency";
+    public const string Network_ErrorsSubjectKey = "Interface Errors";
+    public const string Network_TrafficSubjectKey = "Packets";
+
+    public static string Network_Latency => IsEs ? "Latencia" : "Latency";
+    public static string Network_InterfaceErrors => IsEs ? "Errores de interfaz" : "Interface errors";
+    public static string Network_Packets => IsEs ? "Paquetes" : "Packets";
+
+    public static string Network_LatencyValue(double milliseconds) => $"{FormatNumber(milliseconds, "F0")} ms";
+    public static string Network_LatencyThreshold(int thresholdMilliseconds) =>
+        IsEs ? $">{FormatNumber(thresholdMilliseconds)} ms" : $">{FormatNumber(thresholdMilliseconds)} ms";
+
+    public static string Network_ErrorsValue(long count) =>
+        IsEs ? $"{count} error(es) en este ciclo" : $"{count} error(s) this cycle";
+    public static string Network_ErrorsThreshold(int maxPerInterval) =>
+        IsEs ? $">{maxPerInterval} por ciclo" : $">{maxPerInterval} per cycle";
+
+    public static string Network_TrafficValue(long packetCount) =>
+        IsEs ? $"{packetCount} paquetes en este ciclo" : $"{packetCount} packets this cycle";
+    public static string Network_TrafficInformational => IsEs ? "informativo, sin alerta" : "informational, no alert";
+
+    public static string Unavailable_NetworkInterfaceNotFound(string interfaceName) => IsEs
+        ? $"No se encontró la interfaz de red '{interfaceName}'. Revisá Monitoring.Network.InterfaceName (usá --list-network-interfaces para ver los nombres reales)."
+        : $"Network interface '{interfaceName}' not found. Check Monitoring.Network.InterfaceName (use --list-network-interfaces to see the real names).";
+    public static string Unavailable_NetworkInterfaceStatsFailed => IsEs
+        ? "No se pudieron leer las estadísticas de la interfaz de red."
+        : "Failed to read network interface statistics.";
+
     // ---- "Sensor unavailable" reasons (shown to the admin in the startup mail) ----
     public static string Unavailable_ProcessorCounterInit => IsEs
         ? "No se pudo inicializar el contador de rendimiento del procesador."
@@ -223,6 +252,9 @@ public static class Strings
             ("Memory", Memory_SubjectKey) => Memory_Subject,
             ("Temperature", Temperature_CpuPackageKey) => Temperature_CpuPackage,
             ("Temperature", Temperature_CpuAvgOfCoresKey) => Temperature_CpuAvgOfCores,
+            ("Network", Network_LatencySubjectKey) => Network_Latency,
+            ("Network", Network_ErrorsSubjectKey) => Network_InterfaceErrors,
+            ("Network", Network_TrafficSubjectKey) => Network_Packets,
             _ => subjectKey,
         };
 
@@ -381,6 +413,14 @@ public static class Strings
     public static string Log_NoGatewayUsingFallback => T(
         "El monitor de red no pudo detectar un gateway por defecto; usa el host de respaldo {Fallback}",
         "Network monitor could not detect a default gateway; using fallback host {Fallback}");
+    public static string Log_InterfaceStatsReadFailed => T(
+        "Falló la lectura de estadísticas de la interfaz de red {Interface}",
+        "Failed to read statistics for network interface {Interface}");
+    public static string Log_ResetRecords => T(
+        "Se reiniciaron los registros de {Monitor}: {Count} fila(s) eliminada(s)",
+        "Reset records for {Monitor}: {Count} row(s) deleted");
+    public static string Log_ResetRecordsFailed => T(
+        "Falló el reinicio de registros para {Monitor}", "Failed to reset records for {Monitor}");
 
     // ---- CLI-only output (--list-sensors / --send-summary), not written to the log file ----
     public static string Cli_OpeningHardwareMonitor => T(
@@ -393,4 +433,27 @@ public static class Strings
     public static string Cli_SummarySentFailed => T(
         "El mail de resumen diario FALLÓ al enviarse (revisá los logs).", "Daily summary mail FAILED to send (check logs).");
     public static string Cli_SummaryFailed(string message) => T($"Falló el resumen diario: {message}", $"Daily summary failed: {message}");
+    public static string Cli_ListInterfacesDone => T(
+        "Listo. Usá el nombre exacto de arriba (columna 'Name') para Monitoring.Network.InterfaceName en appsettings.<NOMBRE-MAQUINA>.json.",
+        "Done. Use the exact name above ('Name' column) for Monitoring.Network.InterfaceName in appsettings.<MACHINE-NAME>.json.");
+    public static string Cli_ResetRecordsMissingArg => T(
+        "Uso: ResourceAlerter.exe --reset-records <NombreDelMonitor> (ej: CPU, Memory, Disk, Temperature, Voltage, Network)",
+        "Usage: ResourceAlerter.exe --reset-records <MonitorName> (e.g. CPU, Memory, Disk, Temperature, Voltage, Network)");
+    public static string Cli_ResetRecordsDone(string monitorName, int removed) => T(
+        $"Listo: se eliminaron {removed} registro(s) de {monitorName}.",
+        $"Done: deleted {removed} record(s) for {monitorName}.");
+    public static string Cli_ResetRecordsFailed(string monitorName) => T(
+        $"Falló el reinicio de registros de {monitorName} (revisá los logs).",
+        $"Failed to reset records for {monitorName} (check the logs).");
+
+    // ---- Viewer: Settings screen "Reset records" button ----
+    public static string Viewer_ResetRecords => T("Reiniciar registros", "Reset records");
+    public static string Viewer_ResettingRecords => T("Reiniciando...", "Resetting...");
+    public static string Viewer_ResetRecordsConfirm(string monitorDisplay) => T(
+        $"Esto borra PERMANENTEMENTE todo el historial guardado de \"{monitorDisplay}\" (gráficos y alertas registradas). No se puede deshacer. ¿Confirmás?",
+        $"This PERMANENTLY deletes all recorded history for \"{monitorDisplay}\" (charts and logged alerts). This cannot be undone. Confirm?");
+    public static string Viewer_ResetRecordsDone => T("Listo: se reiniciaron los registros.", "Done: records were reset.");
+    public static string Viewer_ResetRecordsFailed => T(
+        "No se pudieron reiniciar los registros. Revisá el log del servicio para el detalle.",
+        "Could not reset records. Check the service log for details.");
 }

@@ -294,9 +294,51 @@ public sealed class DataRecorder : IDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, Strings.Log_ReadSamplesFailed, monitor, subject);
+                return result;
             }
-            return result;
+            return FillGaps(result);
         }
+    }
+
+    /// <summary>
+    /// Inserts a zero-value point right after the last sample before a gap and another right
+    /// before the first sample after it, so charts (Viewer and the daily-summary JPEGs) drop to
+    /// 0 and back instead of drawing a straight (misleading) interpolated line across a period
+    /// where nothing was actually recorded — e.g. the service was stopped, or a sensor was
+    /// unavailable for a while. The gap threshold is derived from the series' own typical
+    /// spacing (median inter-sample gap × 3) rather than hard-coded, since PollingIntervalSeconds
+    /// is configurable up to an hour and a fixed threshold would false-positive on anyone using
+    /// a slower interval.
+    /// </summary>
+    private static List<SamplePoint> FillGaps(List<SamplePoint> points)
+    {
+        if (points.Count < 3)
+        {
+            return points; // not enough data to establish a "typical" spacing
+        }
+
+        var deltas = new List<double>(points.Count - 1);
+        for (var i = 1; i < points.Count; i++)
+        {
+            deltas.Add((points[i].Timestamp - points[i - 1].Timestamp).TotalSeconds);
+        }
+        deltas.Sort();
+        var typicalGapSeconds = deltas[deltas.Count / 2];
+        var thresholdSeconds = Math.Max(typicalGapSeconds * 3, 60);
+
+        var filled = new List<SamplePoint>(points.Count) { points[0] };
+        for (var i = 1; i < points.Count; i++)
+        {
+            var prev = points[i - 1];
+            var curr = points[i];
+            if ((curr.Timestamp - prev.Timestamp).TotalSeconds > thresholdSeconds)
+            {
+                filled.Add(new SamplePoint(prev.Timestamp.AddSeconds(1), 0));
+                filled.Add(new SamplePoint(curr.Timestamp.AddSeconds(-1), 0));
+            }
+            filled.Add(curr);
+        }
+        return filled;
     }
 
     public IReadOnlyList<AlertEventRecord> GetAlertEvents(DateTimeOffset from, DateTimeOffset to)
@@ -440,6 +482,56 @@ public sealed class DataRecorder : IDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, Strings.Log_PruneOrphanedSeriesFailed);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Permanently deletes every Samples/AlertEvents row for one monitor category (e.g. "Disk")
+    /// — a deliberate full wipe, unlike <see cref="PruneOrphanedSeries"/>'s cautious per-subject
+    /// cleanup. Meant for the Settings screen's "Reset records" button: mainly useful right after
+    /// an upgrade that changes a monitor's recorded unit (e.g. v4.0.0 switched Disk from GB to %
+    /// free), so old and new data don't sit mixed in the same chart. Returns the number of rows
+    /// deleted, or -1 on failure (distinct from a legitimate "0 rows" when nothing was recorded).
+    /// </summary>
+    public int ResetMonitorRecords(string monitorName)
+    {
+        if (_connection is null)
+        {
+            return -1;
+        }
+
+        lock (_gate)
+        {
+            try
+            {
+                using var tx = _connection.BeginTransaction();
+                var removed = 0;
+
+                using (var cmd = _connection.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText = "DELETE FROM Samples WHERE Monitor = $mon";
+                    cmd.Parameters.AddWithValue("$mon", monitorName);
+                    removed += cmd.ExecuteNonQuery();
+                }
+
+                using (var cmd = _connection.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText = "DELETE FROM AlertEvents WHERE Monitor = $mon";
+                    cmd.Parameters.AddWithValue("$mon", monitorName);
+                    removed += cmd.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+                _logger.LogInformation(Strings.Log_ResetRecords, monitorName, removed);
+                return removed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, Strings.Log_ResetRecordsFailed, monitorName);
+                return -1;
             }
         }
     }

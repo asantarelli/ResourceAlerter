@@ -74,7 +74,47 @@ public sealed class DataReader
         }
 
         var latest = points.Count > 0 ? points[^1] : GetLatestEver(connection, series);
-        return (latest, points);
+        return (latest, FillGaps(points));
+    }
+
+    /// <summary>
+    /// Inserts a zero-value point right after the last sample before a gap and another right
+    /// before the first sample after it, so the chart drops to 0 and back instead of drawing a
+    /// straight (and misleading) interpolated line across a period where nothing was actually
+    /// recorded — e.g. the service was stopped, or a sensor was unavailable for a while. The gap
+    /// threshold is derived from the series' own typical spacing (median inter-sample gap × 3)
+    /// rather than hard-coded, since PollingIntervalSeconds is configurable up to an hour and a
+    /// fixed threshold would false-positive on anyone using a slower interval.
+    /// </summary>
+    private static List<SamplePoint> FillGaps(List<SamplePoint> points)
+    {
+        if (points.Count < 3)
+        {
+            return points; // not enough data to establish a "typical" spacing
+        }
+
+        var deltas = new List<double>(points.Count - 1);
+        for (var i = 1; i < points.Count; i++)
+        {
+            deltas.Add((points[i].Timestamp - points[i - 1].Timestamp).TotalSeconds);
+        }
+        deltas.Sort();
+        var typicalGapSeconds = deltas[deltas.Count / 2];
+        var thresholdSeconds = Math.Max(typicalGapSeconds * 3, 60);
+
+        var filled = new List<SamplePoint>(points.Count) { points[0] };
+        for (var i = 1; i < points.Count; i++)
+        {
+            var prev = points[i - 1];
+            var curr = points[i];
+            if ((curr.Timestamp - prev.Timestamp).TotalSeconds > thresholdSeconds)
+            {
+                filled.Add(new SamplePoint(prev.Timestamp.AddSeconds(1), 0));
+                filled.Add(new SamplePoint(curr.Timestamp.AddSeconds(-1), 0));
+            }
+            filled.Add(curr);
+        }
+        return filled;
     }
 
     private static SamplePoint? GetLatestEver(SqliteConnection connection, SeriesKey series)

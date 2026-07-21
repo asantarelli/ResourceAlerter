@@ -15,6 +15,12 @@ if (args.Contains("--list-sensors"))
     return;
 }
 
+if (args.Contains("--list-network-interfaces"))
+{
+    ListNetworkInterfaces();
+    return;
+}
+
 // The installer only ever ships/updates appsettings.example.json — it never touches
 // appsettings.json itself, so an upgrade or even an uninstall/reinstall can never clobber a
 // server's real configuration (this used to be "enforced" via WiX Component Permanent/
@@ -83,6 +89,38 @@ if (!isWindowsService)
 
 var host = builder.Build();
 
+// Permanently deletes every recorded Samples/AlertEvents row for one monitor category, then
+// exits — what the Viewer's per-tab "Reset records" button launches (elevated, same "shell out,
+// elevated, check exit code" pattern as --send-summary). Runs in its own short-lived process
+// rather than the live service so a manual reset can happen without restarting the service;
+// SQLite's WAL mode serializes the brief write against whatever the running service is doing.
+if (args.Contains("--reset-records"))
+{
+    var monitorArgIndex = Array.IndexOf(args, "--reset-records");
+    var monitorName = monitorArgIndex + 1 < args.Length ? args[monitorArgIndex + 1] : null;
+    if (string.IsNullOrWhiteSpace(monitorName))
+    {
+        Console.WriteLine(Strings.Cli_ResetRecordsMissingArg);
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    var recorder = host.Services.GetRequiredService<DataRecorder>();
+    var removed = recorder.ResetMonitorRecords(monitorName);
+    if (removed >= 0)
+    {
+        Console.WriteLine(Strings.Cli_ResetRecordsDone(monitorName, removed));
+        Environment.ExitCode = 0;
+    }
+    else
+    {
+        Console.WriteLine(Strings.Cli_ResetRecordsFailed(monitorName));
+        Environment.ExitCode = 1;
+    }
+
+    return;
+}
+
 // Builds and sends the daily summary (last 24h) immediately, then exits — either as a manual
 // test hook, or as what the Viewer's "send today's summary" button launches (elevated, so
 // HardwareMonitorAccessor gets the same sensor access the service itself has). Exit code
@@ -139,4 +177,16 @@ static void ListSensors()
     computer.Close();
     Console.WriteLine();
     Console.WriteLine(Strings.Cli_ListSensorsDone);
+}
+
+static void ListNetworkInterfaces()
+{
+    Console.WriteLine($"{"Name",-25} {"Type",-20} {"Status",-10} Description");
+    foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+    {
+        Console.WriteLine($"{nic.Name,-25} {nic.NetworkInterfaceType,-20} {nic.OperationalStatus,-10} {nic.Description}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(Strings.Cli_ListInterfacesDone);
 }
