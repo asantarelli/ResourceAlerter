@@ -338,3 +338,9 @@ Still to verify per-machine before rollout (do this on **each** server, hardware
 MIT — see [LICENSE](LICENSE). Third-party components (LibreHardwareMonitorLib, SQLite,
 ScottPlot, and others) are used under their own licenses; see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## ☕ ¿Te fue útil?
+
+Si esta herramienta te ahorró tiempo, podés invitarme un café:
+
+[![Donar con PayPal](https://www.paypalobjects.com/es_ES/i/btn/btn_donate_LG.gif)](https://www.paypal.com/donate/?business=informacion@sdigitales.com.ar)
