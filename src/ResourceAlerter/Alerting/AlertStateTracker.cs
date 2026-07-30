@@ -199,7 +199,7 @@ public sealed class AlertStateTracker
                 $"{Strings.Label_Item}: {subjectDisplay}\r\n" +
                 $"{Strings.Label_DetectedValue}: {result.DisplayValue}\r\n" +
                 $"{Strings.Label_Threshold}: {result.DisplayThreshold}\r\n" +
-                $"{Strings.Label_EventStarted}: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n",
+                $"{Strings.Label_EventStarted}: {entry.EventStartedAt?.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}\r\n",
         }, cancellationToken);
     }
 
@@ -219,7 +219,7 @@ public sealed class AlertStateTracker
                 $"{Strings.Label_Item}: {subjectDisplay}\r\n" +
                 $"{Strings.Label_CurrentValue}: {result.DisplayValue}\r\n" +
                 $"{Strings.Label_Threshold}: {result.DisplayThreshold}\r\n" +
-                $"{Strings.Label_EventStarted}: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
+                $"{Strings.Label_EventStarted}: {entry.EventStartedAt?.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}\r\n" +
                 $"{Strings.Label_OngoingFor}: {FormatDuration(duration)}\r\n",
         }, cancellationToken);
     }
@@ -242,8 +242,8 @@ public sealed class AlertStateTracker
                 $"{Strings.Label_Item}: {subjectDisplay}\r\n" +
                 $"{Strings.Label_LastDetectedValue}: {entry.LastDisplayValue}\r\n" +
                 $"{Strings.Label_Threshold}: {entry.LastDisplayThreshold}\r\n" +
-                $"{Strings.Label_EventStarted}: {entry.EventStartedAt:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
-                $"{Strings.Label_ResolvedAt}: {now:yyyy-MM-dd HH:mm:ss} UTC\r\n" +
+                $"{Strings.Label_EventStarted}: {entry.EventStartedAt?.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}\r\n" +
+                $"{Strings.Label_ResolvedAt}: {now.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz}\r\n" +
                 $"{Strings.Label_TotalDuration}: {FormatDuration(duration)}\r\n",
         }, cancellationToken);
     }

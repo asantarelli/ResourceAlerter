@@ -20,7 +20,17 @@ public sealed class MainForm : Form
     private readonly Button _sendSummaryButton;
     private readonly Button _settingsButton;
     private readonly FormsPlot _plot;
+    private readonly ToolTip _plotToolTip;
     private readonly System.Windows.Forms.Timer _autoRefreshTimer;
+    private readonly System.Windows.Forms.Timer _yRescaleTimer;
+
+    // Backing data for the currently-loaded series, kept around so the Y-rescale-on-zoom timer
+    // can recompute Y limits from whatever's currently visible without re-querying the database
+    // on every tick.
+    private double[] _loadedXs = Array.Empty<double>();
+    private double[] _loadedYs = Array.Empty<double>();
+    private double _lastSeenXLeft = double.NaN;
+    private double _lastSeenXRight = double.NaN;
 
     public MainForm(DataReader reader)
     {
@@ -97,6 +107,15 @@ public sealed class MainForm : Form
 
         _plot = new FormsPlot { Dock = DockStyle.Fill };
 
+        // ScottPlot's FormsPlot already supports mouse zoom/pan out of the box (scroll wheel to
+        // zoom, drag to pan, right-click for a menu with "Auto Axis" to reset the view) — no
+        // custom input handling needed. The only thing stopping it from being useful for
+        // inspecting an alert was the periodic auto-refresh resetting the zoom every 30s (see
+        // LoadSelectedSeries' resetZoom parameter). This tooltip is just so the built-in
+        // interactivity is discoverable.
+        _plotToolTip = new ToolTip();
+        _plotToolTip.SetToolTip(_plot, Strings.Viewer_ChartZoomHint);
+
         Controls.Add(_plot);
         Controls.Add(topPanel);
 
@@ -104,13 +123,82 @@ public sealed class MainForm : Form
         // monitoring viewer is that it stays accurate while just sitting open on a screen.
         _autoRefreshTimer = new System.Windows.Forms.Timer { Interval = (int)AutoRefreshInterval.TotalMilliseconds };
         _autoRefreshTimer.Tick += (_, _) => Refresh(fullReload: false);
-        FormClosed += (_, _) => _autoRefreshTimer.Stop();
+
+        // Zooming in on X (scroll/drag/right-click-rectangle — ScottPlot's built-in gestures)
+        // doesn't rescale Y to match, so a zoomed-in view can look flat if the interesting
+        // variation is small relative to the full 24h range. Rather than hook mouse events
+        // directly (ScottPlot's rendering surface is a child SKControl, and it's not
+        // documented/guaranteed which control actually receives raw pointer input), this polls
+        // the X-axis limits at a short interval and only does work when they've actually
+        // changed — cheap when idle, and works for every gesture (scroll, drag, rectangle-zoom,
+        // even the right-click "Auto Axis" reset) uniformly instead of one-by-one.
+        _yRescaleTimer = new System.Windows.Forms.Timer { Interval = 250 };
+        _yRescaleTimer.Tick += (_, _) => RescaleYToVisibleXIfChanged();
+
+        FormClosed += (_, _) =>
+        {
+            _autoRefreshTimer.Stop();
+            _yRescaleTimer.Stop();
+        };
 
         Load += (_, _) =>
         {
             Refresh(fullReload: true);
             _autoRefreshTimer.Start();
+            _yRescaleTimer.Start();
         };
+    }
+
+    /// <summary>
+    /// If the visible X range has changed since the last check (the user zoomed/panned/reset
+    /// via any of ScottPlot's built-in gestures), rescale Y to fit just the data points
+    /// currently within that X range, with a little padding — the classic "zoom into a time
+    /// window and the value axis auto-scales to make the detail readable" behavior. A no-op
+    /// (cheap double comparison) on every tick where nothing changed, i.e. almost always.
+    /// </summary>
+    private void RescaleYToVisibleXIfChanged()
+    {
+        if (_loadedXs.Length == 0)
+        {
+            return;
+        }
+
+        var limits = _plot.Plot.Axes.GetLimits();
+        if (limits.Left == _lastSeenXLeft && limits.Right == _lastSeenXRight)
+        {
+            return;
+        }
+
+        _lastSeenXLeft = limits.Left;
+        _lastSeenXRight = limits.Right;
+
+        double? min = null;
+        double? max = null;
+        for (var i = 0; i < _loadedXs.Length; i++)
+        {
+            if (_loadedXs[i] < limits.Left || _loadedXs[i] > limits.Right)
+            {
+                continue;
+            }
+            if (min is null || _loadedYs[i] < min)
+            {
+                min = _loadedYs[i];
+            }
+            if (max is null || _loadedYs[i] > max)
+            {
+                max = _loadedYs[i];
+            }
+        }
+
+        if (min is null || max is null)
+        {
+            return; // nothing visible in this X range (e.g. panned past the edge of the data)
+        }
+
+        var span = max.Value - min.Value;
+        var padding = span > 0 ? span * 0.1 : Math.Max(Math.Abs(max.Value) * 0.1, 1);
+        _plot.Plot.Axes.SetLimitsY(min.Value - padding, max.Value + padding);
+        _plot.Refresh();
     }
 
     /// <summary>
@@ -218,7 +306,11 @@ public sealed class MainForm : Form
                 }
             }
 
-            LoadSelectedSeries();
+            // fullReload (explicit "Refrescar" click, or the very first load) resets the zoom;
+            // the 30s auto-refresh timer calls this with fullReload=false specifically so it
+            // DOESN'T reset the zoom — otherwise a chart the user zoomed into to inspect an
+            // alert would snap back to the full 24h view on its own every 30 seconds.
+            LoadSelectedSeries(resetZoom: fullReload);
         }
         catch (Exception ex)
         {
@@ -226,7 +318,16 @@ public sealed class MainForm : Form
         }
     }
 
-    private void LoadSelectedSeries()
+    /// <summary>
+    /// ScottPlot's FormsPlot already supports mouse zoom/pan out of the box (scroll wheel,
+    /// drag, right-click for a menu with "Auto Axis") — no custom input handling needed here.
+    /// <paramref name="resetZoom"/> controls whether this call resets the view back to fit-all.
+    /// <see cref="ScottPlot.Plot.Clear"/> itself does not touch axis limits, so a plain
+    /// Clear()+re-add of the data would already preserve zoom — the part that actually needed
+    /// gating was <c>Axes.DateTimeTicksBottom()</c>, which replaces the bottom axis object
+    /// (resetting its limits) and so must only run when actually resetting the view.
+    /// </summary>
+    private void LoadSelectedSeries(bool resetZoom = true)
     {
         if (_seriesCombo.SelectedItem is not SeriesKey series)
         {
@@ -249,6 +350,8 @@ public sealed class MainForm : Form
             {
                 var xs = samples.Select(s => s.Timestamp.LocalDateTime.ToOADate()).ToArray();
                 var ys = samples.Select(s => s.Value).ToArray();
+                _loadedXs = xs;
+                _loadedYs = ys;
 
                 var scatter = plot.Add.Scatter(xs, ys);
                 scatter.MarkerSize = 0;
@@ -258,6 +361,11 @@ public sealed class MainForm : Form
                 scatter.FillYColor = scatter.Color.WithAlpha(0.15);
                 scatter.FillYValue = ys.Min();
             }
+            else
+            {
+                _loadedXs = Array.Empty<double>();
+                _loadedYs = Array.Empty<double>();
+            }
 
             foreach (var alert in alerts)
             {
@@ -266,13 +374,29 @@ public sealed class MainForm : Form
                 line.LineWidth = 1.5f;
             }
 
-            plot.Axes.DateTimeTicksBottom();
             plot.Title(Strings.Viewer_Last24Hours(series.ToString()));
             if (!string.IsNullOrEmpty(series.Unit))
             {
                 plot.YLabel(series.Unit);
             }
-            plot.Axes.AutoScale();
+            if (resetZoom)
+            {
+                // DateTimeTicksBottom() replaces the bottom axis object, which resets its
+                // limits — that's the actual reason a periodic refresh was wiping out the
+                // user's zoom (Clear() + re-adding data alone does NOT touch axis limits, only
+                // this call does). Only calling it when resetZoom is true is what lets a
+                // periodic data refresh leave the user's current zoom/pan exactly where they
+                // left it; Clear() doesn't undo the tick formatting this already set up.
+                plot.Axes.DateTimeTicksBottom();
+                plot.Axes.AutoScale();
+
+                // Seed the "last seen" X range to the freshly auto-scaled one, so the Y-rescale
+                // timer's next tick sees no change and doesn't immediately redo the Y fit with
+                // its own (slightly different) padding right on top of what AutoScale just did.
+                var freshLimits = plot.Axes.GetLimits();
+                _lastSeenXLeft = freshLimits.Left;
+                _lastSeenXRight = freshLimits.Right;
+            }
 
             _plot.Refresh();
         }

@@ -281,6 +281,9 @@ public static class Strings
     public static string Viewer_Error(string message) => T($"Error: {message}", $"Error: {message}");
     public static string Viewer_Last24Hours(string series) => T($"{series} — últimas 24 horas", $"{series} — last 24 hours");
     public static string Viewer_Title(string machine) => $"ResourceAlerter Viewer — {machine}";
+    public static string Viewer_ChartZoomHint => T(
+        "Rueda del mouse: zoom · Arrastrar: mover · Click derecho: menú (incl. \"Auto Axis\" para volver a ver todo). El eje vertical se ajusta solo a lo que quede visible.",
+        "Mouse wheel: zoom · Drag: pan · Right-click: menu (incl. \"Auto Axis\" to see everything again). The vertical axis auto-fits whatever's visible.");
 
     public static string Viewer_ServiceRestartedOk => T("Servicio reiniciado correctamente.", "Service restarted successfully.");
     public static string Viewer_ServiceRestartFailed(string serviceName) => T(
