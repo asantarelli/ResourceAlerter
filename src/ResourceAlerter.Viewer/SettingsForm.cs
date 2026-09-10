@@ -111,6 +111,7 @@ public sealed class SettingsForm : Form
         tabs.TabPages.Add(BuildTemperatureTab());
         tabs.TabPages.Add(BuildVoltageTab());
         tabs.TabPages.Add(BuildNetworkTab());
+        tabs.TabPages.Add(BuildSqlServerTab());
         tabs.TabPages.Add(BuildDatabaseTab());
         tabs.TabPages.Add(BuildLoggingTab());
 
@@ -407,6 +408,63 @@ public sealed class SettingsForm : Form
         }
     }
 
+    private TabPage BuildSqlServerTab()
+    {
+        var page = new TabPage("SQL Server");
+        var panel = NewPanel(15);
+        var sql = _bundle.Monitoring.SqlServer;
+
+        var controls = new MonitorControls { Enabled = AddCheck(panel, 0, Strings.T("Habilitado:", "Enabled:"), sql.Enabled) };
+        _sqlIniFilePathBox = AddText(panel, 1, Strings.T("Archivo INI de conexión:", "Connection INI file:"), sql.IniFilePath ?? "");
+        _sqlIniSectionBox = AddText(panel, 2, Strings.T("Sección del INI:", "INI section:"), sql.IniSection ?? "");
+        _sqlCheckIntervalBox = AddNumeric(panel, 3, Strings.T("Intervalo de verificación (segundos):", "Check interval (seconds):"), sql.CheckIntervalSeconds, 5, 3600);
+        _sqlConnectTimeoutBox = AddNumeric(panel, 4, Strings.T("Timeout de conexión (segundos):", "Connect timeout (seconds):"), sql.ConnectTimeoutSeconds, 1, 60);
+        _sqlMemoryThresholdBox = AddNumeric(panel, 5, Strings.T("Umbral de memoria (% de RAM de la máquina):", "Memory threshold (% of machine RAM):"), (decimal)sql.MemoryUtilizationThresholdPercent, 0, 100, 1);
+        _sqlMaxConnectionsBox = AddNumeric(panel, 6, Strings.T("Máx. conexiones:", "Max connections:"), sql.MaxConnectionsThreshold, 1, 100_000);
+        _sqlMaxBlockingSecondsBox = AddNumeric(panel, 7, Strings.T("Máx. segundos de bloqueo:", "Max blocking seconds:"), sql.MaxBlockingSeconds, 1, 3600);
+        _sqlLogSpaceThresholdBox = AddNumeric(panel, 8, Strings.T("Umbral de espacio de log (%):", "Log space threshold (%):"), (decimal)sql.LogSpaceUsedThresholdPercent, 0, 100, 1);
+        _sqlMaxErrorLogEntriesBox = AddNumeric(panel, 9, Strings.T("Máx. errores nuevos en el log por ciclo:", "Max new log errors per cycle:"), sql.MaxNewErrorLogEntriesPerInterval, 0, 10_000);
+        controls.SustainedWindowSeconds = AddNumeric(panel, 10, Strings.T("Ventana sostenida (segundos):", "Sustained window (seconds):"), sql.SustainedWindowSeconds, 1, 3600);
+        controls.RecoveryWindowSeconds = AddNumeric(panel, 11, Strings.T("Ventana de recuperación (segundos):", "Recovery window (seconds):"), sql.RecoveryWindowSeconds, 1, 3600);
+        controls.ReminderIntervalMinutes = AddNumeric(panel, 12, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), sql.ReminderIntervalMinutes, 1, 1440);
+
+        var note = new Label
+        {
+            Text = Strings.T(
+                "No se guarda usuario/contraseña acá — se leen del archivo INI de conexión que ya usa tu\n" +
+                "aplicación (ej. el .ini de un driver MSSQL de Clarion), sección [Nombre] con claves\n" +
+                "Server/DatabaseName/UserName/Password/Port/UseWindowsAuthentication. Se relee en cada\n" +
+                "verificación, así que un cambio de contraseña en el .ini se toma solo. El log de errores\n" +
+                "y los jobs de SQL Agent requieren que el login tenga permiso VIEW SERVER STATE como mínimo\n" +
+                "(el login \"sa\" ya lo tiene); si no lo tiene, esas mediciones se omiten en silencio.",
+                "No username/password is stored here — they're read from the connection INI file your\n" +
+                "app already uses (e.g. a Clarion MSSQL driver's .ini), section [Name] with keys\n" +
+                "Server/DatabaseName/UserName/Password/Port/UseWindowsAuthentication. Re-read on every\n" +
+                "check, so a password change in the .ini is picked up automatically. The error log check\n" +
+                "needs the login to have at least VIEW SERVER STATE permission (the \"sa\" login already\n" +
+                "has it); silently skipped otherwise."),
+            AutoSize = true,
+            ForeColor = Color.Gray,
+        };
+        panel.Controls.Add(note, 0, 13);
+        panel.SetColumnSpan(note, 2);
+        panel.Controls.Add(BuildResetRecordsButton("SqlServer"), 0, 14);
+
+        _monitorControls["SqlServer"] = controls;
+        page.Controls.Add(panel);
+        return page;
+    }
+
+    private TextBox _sqlIniFilePathBox = null!;
+    private TextBox _sqlIniSectionBox = null!;
+    private NumericUpDown _sqlCheckIntervalBox = null!;
+    private NumericUpDown _sqlConnectTimeoutBox = null!;
+    private NumericUpDown _sqlMemoryThresholdBox = null!;
+    private NumericUpDown _sqlMaxConnectionsBox = null!;
+    private NumericUpDown _sqlMaxBlockingSecondsBox = null!;
+    private NumericUpDown _sqlLogSpaceThresholdBox = null!;
+    private NumericUpDown _sqlMaxErrorLogEntriesBox = null!;
+
     private TabPage BuildDatabaseTab()
     {
         var page = new TabPage(Strings.T("Base de datos", "Database"));
@@ -487,6 +545,17 @@ public sealed class SettingsForm : Form
         _bundle.Monitoring.Network.LatencyThresholdMilliseconds = (int)_networkLatencyThresholdBox.Value;
         _bundle.Monitoring.Network.InterfaceName = string.IsNullOrWhiteSpace(_networkInterfaceNameBox.Text) ? null : _networkInterfaceNameBox.Text.Trim();
         _bundle.Monitoring.Network.MaxInterfaceErrorsPerInterval = (int)_networkMaxInterfaceErrorsBox.Value;
+
+        ApplyMonitorBase(_bundle.Monitoring.SqlServer, "SqlServer");
+        _bundle.Monitoring.SqlServer.IniFilePath = string.IsNullOrWhiteSpace(_sqlIniFilePathBox.Text) ? null : _sqlIniFilePathBox.Text.Trim();
+        _bundle.Monitoring.SqlServer.IniSection = string.IsNullOrWhiteSpace(_sqlIniSectionBox.Text) ? null : _sqlIniSectionBox.Text.Trim();
+        _bundle.Monitoring.SqlServer.CheckIntervalSeconds = (int)_sqlCheckIntervalBox.Value;
+        _bundle.Monitoring.SqlServer.ConnectTimeoutSeconds = (int)_sqlConnectTimeoutBox.Value;
+        _bundle.Monitoring.SqlServer.MemoryUtilizationThresholdPercent = (double)_sqlMemoryThresholdBox.Value;
+        _bundle.Monitoring.SqlServer.MaxConnectionsThreshold = (int)_sqlMaxConnectionsBox.Value;
+        _bundle.Monitoring.SqlServer.MaxBlockingSeconds = (int)_sqlMaxBlockingSecondsBox.Value;
+        _bundle.Monitoring.SqlServer.LogSpaceUsedThresholdPercent = (double)_sqlLogSpaceThresholdBox.Value;
+        _bundle.Monitoring.SqlServer.MaxNewErrorLogEntriesPerInterval = (int)_sqlMaxErrorLogEntriesBox.Value;
 
         _bundle.Database.Path = _dbPathBox.Text.Trim();
         _bundle.Database.RetentionDays = (int)_dbRetentionBox.Value;

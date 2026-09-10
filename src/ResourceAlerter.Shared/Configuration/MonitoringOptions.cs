@@ -12,6 +12,7 @@ public sealed class MonitoringOptions
     public VoltageOptions Voltage { get; set; } = new();
     public NetworkOptions Network { get; set; } = new();
     public DiskOptions Disk { get; set; } = new();
+    public SqlServerOptions SqlServer { get; set; } = new();
 }
 
 public abstract class MonitorOptionsBase
@@ -113,4 +114,39 @@ public sealed class DiskOptions : MonitorOptionsBase
 
     /// <summary>Drive letters to check, e.g. ["C:", "D:"]. Empty = only the system drive.</summary>
     public List<string> Drives { get; set; } = new();
+}
+
+public sealed class SqlServerOptions : MonitorOptionsBase
+{
+    /// <summary>
+    /// Path to an existing app's own connection-settings INI file (e.g. a Clarion app's
+    /// "fm3&lt;App&gt;.ini") — ResourceAlerter reads this to get Server/DatabaseName/UserName/
+    /// Password/UseWindowsAuthentication, it never stores or writes SQL credentials itself.
+    /// Read fresh on every check (cheap, small text file), so a password rotated in the source
+    /// app is picked up automatically without editing this app's own config. Null/empty = the
+    /// whole monitor reports as not configured (same "unavailable, silently skipped" pattern as
+    /// a missing sensor).
+    /// </summary>
+    public string? IniFilePath { get; set; }
+
+    /// <summary>Section name within <see cref="IniFilePath"/> holding the connection fields, e.g. "FM3MSS".</summary>
+    public string? IniSection { get; set; }
+
+    /// <summary>Decoupled from the main polling loop, same reasoning as Network's ping interval — a SQL round trip is heavier than an in-process OS read.</summary>
+    public int CheckIntervalSeconds { get; set; } = 30;
+
+    public int ConnectTimeoutSeconds { get; set; } = 5;
+
+    public double MemoryUtilizationThresholdPercent { get; set; } = 90;
+    public int MaxConnectionsThreshold { get; set; } = 200;
+    public int MaxBlockingSeconds { get; set; } = 30;
+    public double LogSpaceUsedThresholdPercent { get; set; } = 90;
+
+    /// <summary>
+    /// Alert if this many new SQL Server error-log entries (lines starting "Error:", SQL
+    /// Server's own format for real errors) appear since the last check. Default 0 = any new
+    /// error at all is worth flagging. Requires the configured login to have permission to run
+    /// <c>xp_readerrorlog</c> (sysadmin, or an explicit GRANT) — silently skipped otherwise.
+    /// </summary>
+    public int MaxNewErrorLogEntriesPerInterval { get; set; } = 0;
 }

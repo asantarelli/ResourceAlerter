@@ -11,7 +11,7 @@ Al guardar, te ofrece **reiniciar el servicio** (pide elevación de Windows) par
 se apliquen al toque. Si decís que no, los cambios quedan guardados igual, pero no se van a
 aplicar hasta el próximo reinicio del servicio.
 
-Las solapas de los 6 monitores (CPU, Memoria, Disco, Temperatura, Voltaje, Red) tienen además un
+Las solapas de los 7 monitores (CPU, Memoria, Disco, Temperatura, Voltaje, Red, SQL Server) tienen además un
 botón **Reiniciar registros**, que borra permanentemente de la base de datos todo el historial
 guardado de ese monitor (gráficos del Viewer y alertas registradas) — pide confirmación antes de
 borrar, y elevación de Windows (usa el mismo mecanismo que "Guardar y reiniciar servicio"). Sirve
@@ -172,6 +172,60 @@ ese caso no hay nada para configurar, es una limitación del hardware/chip.
 | Máx. errores de interfaz por ciclo | Alerta si la placa de red configurada arriba acumula más de esta cantidad de errores/paquetes descartados entre un sondeo y el siguiente. |
 
 El "Tráfico" (cantidad de paquetes) se registra siempre a modo informativo (para el gráfico), sin umbral de alerta — el volumen normal varía demasiado entre servidores como para tener un valor único que tenga sentido en todos los casos.
+
+---
+
+## SQL Server
+
+No se cargan usuario/contraseña acá. ResourceAlerter lee esos datos del **archivo INI de conexión
+que ya usa tu propia aplicación** (por ejemplo, el `.ini` de un driver MSSQL de Clarion, con una
+sección como `[FM3MSS]` y claves `Server`/`DatabaseName`/`UserName`/`Password`/`Port`/
+`UseWindowsAuthentication`). Se relee en cada verificación — si la contraseña cambia en el `.ini`
+de tu app, ResourceAlerter la toma sola, sin que tengas que tocar nada acá.
+
+**Importante:** el INI solo se usa para conseguir credenciales y acceso al servidor — una vez
+conectado, ResourceAlerter controla **todo el servidor SQL Server**, no solo la base nombrada en
+`DatabaseName`. El espacio de log, por ejemplo, se mide por separado para **cada base que tenga
+esa instancia**, no solo la de tu app. Y la conexión de monitoreo en sí se hace contra `master`
+(no contra la base de tu app), así que si esa base puntual tuviera un problema, no corta el
+control del resto del servidor.
+
+| Campo | Notas |
+|---|---|
+| Archivo INI de conexión | Ruta completa al `.ini` (ej. `C:\MiApp\fm3MiApp.ini`). Debe ser legible por la cuenta del servicio (LocalSystem, por defecto ya puede leer casi cualquier archivo local). |
+| Sección del INI | Nombre de la sección dentro del archivo, ej. `FM3MSS`. |
+| Intervalo de verificación (segundos) | Cada cuánto se conecta y consulta SQL Server — separado del intervalo general, porque una consulta SQL pesa más que una lectura del sistema operativo. |
+| Timeout de conexión (segundos) | Cuánto espera antes de considerar que no puede conectar. |
+| Umbral de memoria (% de RAM de la máquina) | Alerta si SQL Server usa más de este % de la RAM total de la máquina. (No es lo mismo que el "memory_utilization_percentage" interno de SQL Server, que suele estar en 100% todo el tiempo en una instancia sana y no sirve como umbral de alerta.) |
+| Máx. conexiones | Alerta si la cantidad de conexiones activas supera este número. |
+| Máx. segundos de bloqueo | Alerta si hay sesiones bloqueadas por más de este tiempo — bloqueos momentáneos (típicos en cualquier sistema con uso real) no alertan, solo los sostenidos. |
+| Umbral de espacio de log (%) | Alerta si el log de transacciones de alguna base supera este % de uso. Se mide por base (aparecen como series separadas en el Viewer); las bases de sistema (`master`, `model`, `msdb`, `tempdb`) se excluyen a propósito. |
+| Máx. errores nuevos en el log por ciclo | Alerta si aparecen más de esta cantidad de líneas "Error:" nuevas en el log de errores de SQL Server desde la última verificación. Default 0 = cualquier error nuevo alerta. El mensaje de la alerta incluye el texto de los errores encontrados, no solo la cantidad. |
+
+**Permisos necesarios:** el espacio de log y las conexiones/bloqueos funcionan con cualquier login
+que tenga el permiso `VIEW SERVER STATE`. El log de errores (`xp_readerrorlog`) necesita ser
+`sysadmin`, o que un DBA le haga un `GRANT EXECUTE` explícito sobre ese procedimiento — si el login
+no tiene permiso, esa medición puntual se omite en silencio (igual que un sensor ausente), el resto
+sigue funcionando.
+
+**Nota:** por ahora no se mide el espacio de los archivos de **datos** (solo el del log) — medir
+el % usado de datos requiere conectarse a cada base individualmente, así que quedó afuera de esta
+primera versión.
+
+**Diagnóstico:** si el Viewer no muestra ninguna serie de SQL Server en el desplegable, es porque
+la conexión nunca se logró (una conexión fallida no genera un valor numérico, así que no se graba
+nada — ni siquiera "Connectivity"). Para ver el motivo exacto sin tener que ir a buscar en los
+logs, andá a la carpeta de instalación y corré:
+
+```
+.\ResourceAlerter.exe --test-sql-server
+```
+
+Esto prueba la conexión con la configuración actual y muestra en pantalla el resultado de cada
+chequeo — si "Connectivity" no sale como `[OK]`, ahí mismo aparece el mensaje de error real
+(usuario/contraseña incorrectos, servidor inalcanzable, `IniFilePath`/`IniSection` mal
+configurados, etc.). Lo mismo queda también en `logs\resourcealerter-<fecha>.log` (nivel
+Advertencia) cuando lo hace el servicio real.
 
 ---
 

@@ -47,12 +47,12 @@ public sealed class DataReader
         return result;
     }
 
-    public (SamplePoint? Latest, IReadOnlyList<SamplePoint> Last24h) GetSamples(SeriesKey series)
+    public (SamplePoint? Latest, IReadOnlyList<SamplePoint> Samples) GetSamples(SeriesKey series, TimeSpan range)
     {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
-        var from = DateTimeOffset.UtcNow.AddHours(-24).ToUnixTimeSeconds();
+        var from = DateTimeOffset.UtcNow.Subtract(range).ToUnixTimeSeconds();
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -133,7 +133,7 @@ public sealed class DataReader
             : null;
     }
 
-    public IReadOnlyList<AlertMark> GetAlerts24h(SeriesKey series)
+    public IReadOnlyList<AlertMark> GetAlerts(SeriesKey series, TimeSpan range)
     {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
@@ -145,7 +145,7 @@ public sealed class DataReader
             """;
         cmd.Parameters.AddWithValue("$mon", series.Monitor);
         cmd.Parameters.AddWithValue("$sub", series.Subject);
-        cmd.Parameters.AddWithValue("$from", DateTimeOffset.UtcNow.AddHours(-24).ToUnixTimeSeconds());
+        cmd.Parameters.AddWithValue("$from", DateTimeOffset.UtcNow.Subtract(range).ToUnixTimeSeconds());
         using var reader = cmd.ExecuteReader();
         var result = new List<AlertMark>();
         while (reader.Read())

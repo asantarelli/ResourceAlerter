@@ -1,9 +1,10 @@
 # ResourceAlerter
 
 Windows service that watches a server's health — CPU, RAM, CPU temperature, PSU rail
-voltages, disk space, and network health (packet loss/outages, latency, interface
-errors/traffic) — and e-mails an alert when something goes out of range, with no external
-monitoring infrastructure (no Zabbix/PRTG/Docker/Linux). Built
+voltages, disk space, network health (packet loss/outages, latency, interface
+errors/traffic), and optionally SQL Server (connectivity, memory, connections, blocking,
+transaction log space, and its own error log) — and e-mails an alert when something goes
+out of range, with no external monitoring infrastructure (no Zabbix/PRTG/Docker/Linux). Built
 with .NET 8 (`Microsoft.Extensions.Hosting` + `Microsoft.Extensions.Hosting.WindowsServices`)
 and [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
 for sensors.
@@ -37,14 +38,14 @@ for sensors.
   useful for planning which sensors to support next. Test it anytime with
   `ResourceAlerter.exe --send-summary`.
 - **A companion Viewer app** (`ResourceAlerterViewer.exe`, desktop shortcut installed by the
-  MSI) shows the current/last value of any recorded variable plus its 24-hour area chart,
-  with the same red alert markers, auto-refreshing every 30s. The chart supports mouse zoom/pan
-  (scroll to zoom, drag to pan, right-click for a menu with "Auto Axis" to reset) for a closer
-  look at a specific alert, and the Y axis auto-rescales to whatever's currently visible on the
-  X axis so a zoomed-in view doesn't look flat — the 30s auto-refresh only updates the data, it
-  never resets a zoom you've set, so you can zoom in and leave it open while it keeps updating.
-  It reads the same SQLite database directly; no elevation needed. It also has a
-  **Configuración** button covering
+  MSI) shows the current/last value of any recorded variable plus an area chart over a
+  selectable window (1/2/6/12/24 hours), with the same red alert markers, auto-refreshing
+  every 30s. The chart supports mouse zoom/pan (scroll to zoom, drag to pan, right-click for
+  a menu with "Auto Axis" to reset) for a closer look at a specific alert, and the Y axis
+  auto-rescales to whatever's currently visible on the X axis so a zoomed-in view doesn't
+  look flat — the 30s auto-refresh only updates the data, it never resets a zoom you've set,
+  so you can zoom in and leave it open while it keeps updating. It reads the same SQLite
+  database directly; no elevation needed. It also has a **Configuración** button covering
   every setting (SMTP, Discord, each monitor's thresholds, database/log retention, ...) as a
   form instead of hand-edited JSON — this is now the primary way to configure a server. If
   `appsettings.json` doesn't exist yet, the form starts from the same defaults the service

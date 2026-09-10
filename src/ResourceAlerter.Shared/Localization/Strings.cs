@@ -63,6 +63,7 @@ public static class Strings
         "Temperature" => IsEs ? "Temperatura" : "Temperature",
         "Voltage" => IsEs ? "Voltaje" : "Voltage",
         "Network" => IsEs ? "Red" : "Network",
+        "SqlServer" => "SQL Server",
         _ => internalName,
     };
 
@@ -209,6 +210,58 @@ public static class Strings
         ? "No se pudieron leer las estadísticas de la interfaz de red."
         : "Failed to read network interface statistics.";
 
+    // ---- SQL Server ----
+    public const string SqlServer_ConnectivitySubjectKey = "Connectivity";
+    public const string SqlServer_MemorySubjectKey = "Memory";
+    public const string SqlServer_ConnectionsSubjectKey = "Connections";
+    public const string SqlServer_BlockingSubjectKey = "Blocking";
+    public const string SqlServer_ErrorLogSubjectKey = "Error Log";
+    /// <summary>Fallback subject only used if the per-database log-space query fails entirely, before any database names are known — successful per-database results use the raw database name as Subject instead, like Disk's drive letters.</summary>
+    public const string SqlServer_LogSpaceSubjectKey = "Log Space";
+
+    public static string SqlServer_Connectivity => IsEs ? "Conectividad" : "Connectivity";
+    public static string SqlServer_Memory => IsEs ? "Memoria" : "Memory";
+    public static string SqlServer_Connections => IsEs ? "Conexiones" : "Connections";
+    public static string SqlServer_Blocking => IsEs ? "Bloqueos" : "Blocking";
+    public static string SqlServer_ErrorLog => IsEs ? "Log de errores" : "Error Log";
+    public static string SqlServer_LogSpace => IsEs ? "Espacio de log" : "Log Space";
+
+    public static string SqlServer_Connected(double connectMilliseconds) =>
+        IsEs ? $"Conectado ({FormatNumber(connectMilliseconds, "F0")} ms)" : $"Connected ({FormatNumber(connectMilliseconds, "F0")} ms)";
+    public static string SqlServer_ConnectFailed(string error) =>
+        IsEs ? $"No se pudo conectar: {error}" : $"Could not connect: {error}";
+    public static string SqlServer_ConnectivityThreshold => IsEs ? "debe responder" : "must respond";
+
+    public static string SqlServer_MemoryValue(double percent, double usedMb) => IsEs
+        ? $"{FormatNumber(percent, "F1")}% de la RAM de la máquina ({FormatNumber(usedMb, "F0")} MB)"
+        : $"{FormatNumber(percent, "F1")}% of machine RAM ({FormatNumber(usedMb, "F0")} MB)";
+    public static string SqlServer_MemoryThreshold(double thresholdPercent) => $">{FormatNumber(thresholdPercent)}%";
+    public static string SqlServer_ConnectionsValue(int count) => count.ToString();
+    public static string SqlServer_ConnectionsThreshold(int max) => $">{max}";
+
+    public static string SqlServer_BlockingValue(int blockedCount, double maxBlockedSeconds) => IsEs
+        ? $"{blockedCount} sesión(es) bloqueada(s), máx {FormatNumber(maxBlockedSeconds, "F0")}s"
+        : $"{blockedCount} blocked session(s), max {FormatNumber(maxBlockedSeconds, "F0")}s";
+    public static string SqlServer_BlockingThreshold(int maxSeconds) => $">{maxSeconds}s";
+
+    public static string SqlServer_LogSpaceValue(double percentUsed, double sizeMb) => IsEs
+        ? $"{FormatNumber(percentUsed, "F1")}% usado ({FormatNumber(sizeMb, "F0")} MB)"
+        : $"{FormatNumber(percentUsed, "F1")}% used ({FormatNumber(sizeMb, "F0")} MB)";
+    public static string SqlServer_LogSpaceThreshold(double thresholdPercent) => $">{FormatNumber(thresholdPercent)}%";
+
+    public static string SqlServer_ErrorLogValue(int count, IReadOnlyList<string> snippets) =>
+        count == 0 ? "0" : $"{count}: " + string.Join(" | ", snippets);
+    public static string SqlServer_ErrorLogThreshold(int max) => $">{max}";
+
+    public static string Unavailable_SqlServerNotConfigured => IsEs
+        ? "SQL Server no está configurado (falta Monitoring.SqlServer.IniFilePath / IniSection)."
+        : "SQL Server is not configured (missing Monitoring.SqlServer.IniFilePath / IniSection).";
+    public static string Unavailable_SqlServerIniSectionEmpty(string path, string section) => IsEs
+        ? $"No se encontró la sección [{section}] en {path}, o el archivo no existe."
+        : $"Section [{section}] not found in {path}, or the file doesn't exist.";
+    public static string Unavailable_SqlServerCheckFailed(string error) => IsEs
+        ? $"Falló la consulta: {error}" : $"Query failed: {error}";
+
     // ---- "Sensor unavailable" reasons (shown to the admin in the startup mail) ----
     public static string Unavailable_ProcessorCounterInit => IsEs
         ? "No se pudo inicializar el contador de rendimiento del procesador."
@@ -255,7 +308,13 @@ public static class Strings
             ("Network", Network_LatencySubjectKey) => Network_Latency,
             ("Network", Network_ErrorsSubjectKey) => Network_InterfaceErrors,
             ("Network", Network_TrafficSubjectKey) => Network_Packets,
-            _ => subjectKey,
+            ("SqlServer", SqlServer_ConnectivitySubjectKey) => SqlServer_Connectivity,
+            ("SqlServer", SqlServer_MemorySubjectKey) => SqlServer_Memory,
+            ("SqlServer", SqlServer_ConnectionsSubjectKey) => SqlServer_Connections,
+            ("SqlServer", SqlServer_BlockingSubjectKey) => SqlServer_Blocking,
+            ("SqlServer", SqlServer_ErrorLogSubjectKey) => SqlServer_ErrorLog,
+            ("SqlServer", SqlServer_LogSpaceSubjectKey) => SqlServer_LogSpace,
+            _ => subjectKey, // per-database Log Space subjects use the DB name directly, like Disk's drive letters
         };
 
     // ---- Viewer (MainForm) ----
@@ -279,8 +338,12 @@ public static class Strings
         "Base de datos no encontrada — ¿está corriendo el servicio?", "Database not found — is the service running?");
     public static string Viewer_NoDataRecorded => T("Sin datos registrados", "No data recorded");
     public static string Viewer_Error(string message) => T($"Error: {message}", $"Error: {message}");
-    public static string Viewer_Last24Hours(string series) => T($"{series} — últimas 24 horas", $"{series} — last 24 hours");
-    public static string Viewer_Title(string machine) => $"ResourceAlerter Viewer — {machine}";
+    public static string Viewer_LastNHours(string series, double hours)
+    {
+        var hoursText = hours == Math.Floor(hours) ? ((int)hours).ToString() : FormatNumber(hours, "0.#");
+        return T($"{series} — últimas {hoursText} horas", $"{series} — last {hoursText} hours");
+    }
+    public static string Viewer_Title(string machine) => $"ResourceAlerter Viewer v{AppInfo.Version} — {machine}";
     public static string Viewer_ChartZoomHint => T(
         "Rueda del mouse: zoom · Arrastrar: mover · Click derecho: menú (incl. \"Auto Axis\" para volver a ver todo). El eje vertical se ajusta solo a lo que quede visible.",
         "Mouse wheel: zoom · Drag: pan · Right-click: menu (incl. \"Auto Axis\" to see everything again). The vertical axis auto-fits whatever's visible.");
@@ -424,6 +487,10 @@ public static class Strings
         "Reset records for {Monitor}: {Count} row(s) deleted");
     public static string Log_ResetRecordsFailed => T(
         "Falló el reinicio de registros para {Monitor}", "Failed to reset records for {Monitor}");
+    public static string Log_SqlServerConnectFailed => T(
+        "Falló la conexión a SQL Server", "Failed to connect to SQL Server");
+    public static string Log_SqlServerCheckFailed => T(
+        "Falló una consulta de SQL Server ({Check})", "A SQL Server query failed ({Check})");
 
     // ---- CLI-only output (--list-sensors / --send-summary), not written to the log file ----
     public static string Cli_OpeningHardwareMonitor => T(
@@ -442,6 +509,12 @@ public static class Strings
     public static string Cli_ResetRecordsMissingArg => T(
         "Uso: ResourceAlerter.exe --reset-records <NombreDelMonitor> (ej: CPU, Memory, Disk, Temperature, Voltage, Network)",
         "Usage: ResourceAlerter.exe --reset-records <MonitorName> (e.g. CPU, Memory, Disk, Temperature, Voltage, Network)");
+    public static string Cli_TestingSqlServer => T(
+        "Probando el monitor de SQL Server con la configuración actual...",
+        "Testing the SQL Server monitor with the current configuration...");
+    public static string Cli_TestSqlServerDone => T(
+        "Listo. Si 'Connectivity' no aparece como OK arriba, ese es el motivo por el que no se graba ningún dato de SQL Server (y por lo tanto no aparece nada en el desplegable del Viewer). Revisá IniFilePath/IniSection en appsettings.json y el mensaje de error de arriba.",
+        "Done. If 'Connectivity' doesn't show as OK above, that's why no SQL Server data is being recorded (and therefore nothing shows up in the Viewer's dropdown). Check IniFilePath/IniSection in appsettings.json and the error message above.");
     public static string Cli_ResetRecordsDone(string monitorName, int removed) => T(
         $"Listo: se eliminaron {removed} registro(s) de {monitorName}.",
         $"Done: deleted {removed} record(s) for {monitorName}.");

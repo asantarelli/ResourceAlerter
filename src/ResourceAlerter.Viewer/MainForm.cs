@@ -14,6 +14,7 @@ public sealed class MainForm : Form
 
     private readonly DataReader _reader;
     private readonly ComboBox _seriesCombo;
+    private readonly ComboBox _rangeCombo;
     private readonly Label _currentValueLabel;
     private readonly Label _autoRefreshLabel;
     private readonly Button _refreshButton;
@@ -37,7 +38,7 @@ public sealed class MainForm : Form
         _reader = reader;
 
         Text = Strings.Viewer_Title(Environment.MachineName);
-        Width = 1000;
+        Width = 1120;
         Height = 600;
         StartPosition = FormStartPosition.CenterScreen;
 
@@ -61,15 +62,33 @@ public sealed class MainForm : Form
         };
         _seriesCombo.SelectedIndexChanged += (_, _) => LoadSelectedSeries();
 
-        _refreshButton = new Button { Text = Strings.Viewer_Refresh, Left = 340, Top = 8, Width = 90 };
+        _rangeCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 70,
+            Left = 336,
+            Top = 9,
+        };
+        _rangeCombo.Items.Add(new TimeRangeOption(Strings.T("1 hora", "1 hour"), TimeSpan.FromHours(1)));
+        _rangeCombo.Items.Add(new TimeRangeOption(Strings.T("2 horas", "2 hours"), TimeSpan.FromHours(2)));
+        _rangeCombo.Items.Add(new TimeRangeOption(Strings.T("6 horas", "6 hours"), TimeSpan.FromHours(6)));
+        _rangeCombo.Items.Add(new TimeRangeOption(Strings.T("12 horas", "12 hours"), TimeSpan.FromHours(12)));
+        _rangeCombo.Items.Add(new TimeRangeOption(Strings.T("24 horas", "24 hours"), TimeSpan.FromHours(24)));
+        _rangeCombo.SelectedIndex = 4; // 24h -- same as the fixed range this always showed before
+        // A range change is a deliberate "look at a different window" action, same as picking a
+        // different series, so it resets zoom — call LoadSelectedSeries directly rather than
+        // Refresh(), since the series LIST doesn't need reloading, just this series' data.
+        _rangeCombo.SelectedIndexChanged += (_, _) => LoadSelectedSeries();
+
+        _refreshButton = new Button { Text = Strings.Viewer_Refresh, Left = 414, Top = 8, Width = 90 };
         _refreshButton.Click += (_, _) => Refresh(fullReload: true); // also picks up newly-recorded series
 
-        _sendSummaryButton = new Button { Text = Strings.Viewer_SendTodaySummary, Left = 440, Top = 8, Width = 160 };
+        _sendSummaryButton = new Button { Text = Strings.Viewer_SendTodaySummary, Left = 512, Top = 8, Width = 160 };
         _sendSummaryButton.Click += async (_, _) => await SendTodaySummaryAsync();
 
         _currentValueLabel = new Label
         {
-            Left = 610,
+            Left = 690,
             Top = 12,
             AutoSize = true,
             Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
@@ -78,7 +97,7 @@ public sealed class MainForm : Form
 
         _autoRefreshLabel = new Label
         {
-            Left = 610,
+            Left = 690,
             Top = 30,
             AutoSize = true,
             Font = new Font(Font.FontFamily, 7.5f, FontStyle.Regular),
@@ -99,6 +118,7 @@ public sealed class MainForm : Form
         _settingsButton.Click += (_, _) => OpenSettings();
 
         topPanel.Controls.Add(_seriesCombo);
+        topPanel.Controls.Add(_rangeCombo);
         topPanel.Controls.Add(_refreshButton);
         topPanel.Controls.Add(_sendSummaryButton);
         topPanel.Controls.Add(_currentValueLabel);
@@ -334,10 +354,12 @@ public sealed class MainForm : Form
             return;
         }
 
+        var range = (_rangeCombo.SelectedItem as TimeRangeOption)?.Range ?? TimeSpan.FromHours(24);
+
         try
         {
-            var (latest, samples) = _reader.GetSamples(series);
-            var alerts = _reader.GetAlerts24h(series);
+            var (latest, samples) = _reader.GetSamples(series, range);
+            var alerts = _reader.GetAlerts(series, range);
 
             _currentValueLabel.Text = latest is null
                 ? Strings.Viewer_NoDataRecorded
@@ -374,7 +396,7 @@ public sealed class MainForm : Form
                 line.LineWidth = 1.5f;
             }
 
-            plot.Title(Strings.Viewer_Last24Hours(series.ToString()));
+            plot.Title(Strings.Viewer_LastNHours(series.ToString(), range.TotalHours));
             if (!string.IsNullOrEmpty(series.Unit))
             {
                 plot.YLabel(series.Unit);
@@ -404,5 +426,10 @@ public sealed class MainForm : Form
         {
             _currentValueLabel.Text = Strings.Viewer_Error(ex.Message);
         }
+    }
+
+    private sealed record TimeRangeOption(string Label, TimeSpan Range)
+    {
+        public override string ToString() => Label;
     }
 }

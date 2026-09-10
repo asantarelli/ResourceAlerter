@@ -22,13 +22,17 @@ internal static class Program
             // UI, so the Viewer opens in whatever language was last saved (service and Viewer
             // always agree, since it's the same appsettings.json).
             var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-            Strings.CurrentLanguage = ConfigStore.Load(configPath).General.Language;
+            var config = ConfigStore.Load(configPath);
+            Strings.CurrentLanguage = config.General.Language;
 
-            // Same default as the service's Database.Path; overridable with a command-line arg
-            // (e.g. a shortcut pointing at a copied-over DB from another server).
+            // Must track the service's actual Database.Path (editable in Settings > Base de
+            // datos), not a hardcoded copy of its default -- otherwise changing that field only
+            // moves where the service writes, leaving the Viewer to keep looking at the old
+            // location forever and report "database not found". A command-line arg still wins,
+            // for a shortcut pointing at a copied-over DB from another server.
             var databasePath = args.Length > 0
                 ? args[0]
-                : Environment.ExpandEnvironmentVariables(@"%ProgramData%\ResourceAlerter\resourcealerter.db");
+                : config.Database.GetExpandedPath();
 
             Application.Run(new MainForm(new DataReader(databasePath)));
         }

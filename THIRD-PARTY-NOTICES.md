@@ -23,7 +23,8 @@ following third-party components, distributed under their own licenses:
 
 The following NuGet packages are used under the MIT License:
 
-- `Microsoft.Data.Sqlite` — https://github.com/dotnet/efcore
+- `Microsoft.Data.Sqlite`, `Microsoft.Data.SqlClient` — https://github.com/dotnet/efcore,
+  https://github.com/dotnet/SqlClient
 - `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Hosting.WindowsServices`,
   `Microsoft.Extensions.Configuration`, `Microsoft.Extensions.Configuration.Binder`,
   `Microsoft.Extensions.Configuration.Json` — https://github.com/dotnet/runtime

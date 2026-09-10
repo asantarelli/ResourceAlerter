@@ -78,6 +78,7 @@ builder.Services.AddSingleton<IHealthMonitor, DiskMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, TemperatureMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, VoltageMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, NetworkMonitor>();
+builder.Services.AddSingleton<IHealthMonitor, SqlServerMonitor>();
 
 builder.Services.AddHostedService<Worker>();
 
@@ -118,6 +119,35 @@ if (args.Contains("--reset-records"))
         Environment.ExitCode = 1;
     }
 
+    return;
+}
+
+// Runs the SQL Server monitor once and prints every result to the console, including the exact
+// exception message on a failed connection (the same one that's otherwise only visible at
+// Warning level in logs\resourcealerter-*.log) -- lets you diagnose "no SQL Server data in the
+// Viewer" on the spot instead of hunting through log files, since a failed connection never
+// produces a NumericValue and therefore never gets recorded (see Worker.cs), which is what
+// actually keeps it out of the Viewer's series dropdown.
+if (args.Contains("--test-sql-server"))
+{
+    var monitor = host.Services.GetServices<IHealthMonitor>().OfType<SqlServerMonitor>().FirstOrDefault();
+    if (monitor is null)
+    {
+        Console.WriteLine("SqlServer monitor not registered.");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    Console.WriteLine(Strings.Cli_TestingSqlServer);
+    Console.WriteLine();
+    foreach (var result in monitor.Check())
+    {
+        var status = result.Unavailable ? $"N/D ({result.UnavailableReason})" : result.InRange ? "OK" : "ALERTA";
+        Console.WriteLine($"[{status}] {result.Subject}: {result.DisplayValue}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(Strings.Cli_TestSqlServerDone);
     return;
 }
 
