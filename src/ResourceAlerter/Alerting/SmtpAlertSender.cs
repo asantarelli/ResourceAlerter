@@ -22,8 +22,15 @@ public sealed class SmtpAlertSender : IAlertSender
         _logger = logger;
     }
 
+    public bool IsEnabled => _options.Enabled;
+
     public async Task<bool> SendAsync(AlertMessage message, CancellationToken cancellationToken)
     {
+        if (!_options.Enabled)
+        {
+            return false;
+        }
+
         if (_options.Recipients.Count == 0)
         {
             _logger.LogWarning(Strings.Log_NoRecipients, message.Subject);

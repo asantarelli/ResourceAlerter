@@ -22,6 +22,7 @@ public sealed class SettingsForm : Form
     private ComboBox _languageBox = null!;
 
     // SMTP
+    private CheckBox _smtpEnabledBox = null!;
     private TextBox _smtpHostBox = null!;
     private NumericUpDown _smtpPortBox = null!;
     private CheckBox _smtpUseSslBox = null!;
@@ -169,19 +170,20 @@ public sealed class SettingsForm : Form
     private TabPage BuildSmtpTab()
     {
         var page = new TabPage("SMTP");
-        var panel = NewPanel(12);
-        _smtpHostBox = AddText(panel, 0, Strings.T("Servidor (Host):", "Server (Host):"), _bundle.Smtp.Host);
-        _smtpPortBox = AddNumeric(panel, 1, Strings.T("Puerto:", "Port:"), _bundle.Smtp.Port, 1, 65535);
-        _smtpUseSslBox = AddCheck(panel, 2, Strings.T("Usar SSL/TLS:", "Use SSL/TLS:"), _bundle.Smtp.UseSsl);
-        _smtpRequiresAuthBox = AddCheck(panel, 3, Strings.T("Requiere autenticación:", "Requires authentication:"), _bundle.Smtp.RequiresAuthentication);
-        _smtpUsernameBox = AddText(panel, 4, Strings.T("Usuario:", "Username:"), _bundle.Smtp.Username);
-        _smtpPasswordBox = AddText(panel, 5, Strings.T("Contraseña:", "Password:"), _bundle.Smtp.Password, password: true);
-        _smtpFromAddressBox = AddText(panel, 6, Strings.T("Dirección remitente:", "From address:"), _bundle.Smtp.FromAddress);
-        _smtpFromDisplayNameBox = AddText(panel, 7, Strings.T("Nombre remitente:", "From display name:"), _bundle.Smtp.FromDisplayName);
-        _smtpRecipientsBox = AddMultilineText(panel, 8, Strings.T("Destinatarios (uno por línea):", "Recipients (one per line):"), JoinLines(_bundle.Smtp.Recipients));
-        _smtpRetryCountBox = AddNumeric(panel, 9, Strings.T("Reintentos de envío:", "Send retries:"), _bundle.Smtp.RetryCount, 1, 10);
-        _smtpRetryBackoffBox = AddNumeric(panel, 10, Strings.T("Espera entre reintentos (segundos):", "Wait between retries (seconds):"), _bundle.Smtp.RetryBackoffSeconds, 1, 300);
-        _smtpTimeoutBox = AddNumeric(panel, 11, Strings.T("Timeout (milisegundos):", "Timeout (milliseconds):"), _bundle.Smtp.TimeoutMilliseconds, 1000, 300_000);
+        var panel = NewPanel(13);
+        _smtpEnabledBox = AddCheck(panel, 0, Strings.T("Habilitado:", "Enabled:"), _bundle.Smtp.Enabled);
+        _smtpHostBox = AddText(panel, 1, Strings.T("Servidor (Host):", "Server (Host):"), _bundle.Smtp.Host);
+        _smtpPortBox = AddNumeric(panel, 2, Strings.T("Puerto:", "Port:"), _bundle.Smtp.Port, 1, 65535);
+        _smtpUseSslBox = AddCheck(panel, 3, Strings.T("Usar SSL/TLS:", "Use SSL/TLS:"), _bundle.Smtp.UseSsl);
+        _smtpRequiresAuthBox = AddCheck(panel, 4, Strings.T("Requiere autenticación:", "Requires authentication:"), _bundle.Smtp.RequiresAuthentication);
+        _smtpUsernameBox = AddText(panel, 5, Strings.T("Usuario:", "Username:"), _bundle.Smtp.Username);
+        _smtpPasswordBox = AddText(panel, 6, Strings.T("Contraseña:", "Password:"), _bundle.Smtp.Password, password: true);
+        _smtpFromAddressBox = AddText(panel, 7, Strings.T("Dirección remitente:", "From address:"), _bundle.Smtp.FromAddress);
+        _smtpFromDisplayNameBox = AddText(panel, 8, Strings.T("Nombre remitente:", "From display name:"), _bundle.Smtp.FromDisplayName);
+        _smtpRecipientsBox = AddMultilineText(panel, 9, Strings.T("Destinatarios (uno por línea):", "Recipients (one per line):"), JoinLines(_bundle.Smtp.Recipients));
+        _smtpRetryCountBox = AddNumeric(panel, 10, Strings.T("Reintentos de envío:", "Send retries:"), _bundle.Smtp.RetryCount, 1, 10);
+        _smtpRetryBackoffBox = AddNumeric(panel, 11, Strings.T("Espera entre reintentos (segundos):", "Wait between retries (seconds):"), _bundle.Smtp.RetryBackoffSeconds, 1, 300);
+        _smtpTimeoutBox = AddNumeric(panel, 12, Strings.T("Timeout (milisegundos):", "Timeout (milliseconds):"), _bundle.Smtp.TimeoutMilliseconds, 1000, 300_000);
         page.Controls.Add(panel);
         return page;
     }
@@ -492,6 +494,7 @@ public sealed class SettingsForm : Form
         _bundle.General.Language = ((LanguageItem)_languageBox.SelectedItem!).Code;
         _bundle.Monitoring.PollingIntervalSeconds = (int)_pollingIntervalBox.Value;
 
+        _bundle.Smtp.Enabled = _smtpEnabledBox.Checked;
         _bundle.Smtp.Host = _smtpHostBox.Text.Trim();
         _bundle.Smtp.Port = (int)_smtpPortBox.Value;
         _bundle.Smtp.UseSsl = _smtpUseSslBox.Checked;

@@ -100,9 +100,16 @@ public sealed class SqlServerMonitor : IHealthMonitor
         {
             connection.Open();
             using var pingCmd = connection.CreateCommand();
-            pingCmd.CommandText = "SELECT 1";
+            pingCmd.CommandText = "SELECT SUSER_SNAME(), CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(50))";
             pingCmd.CommandTimeout = _options.ConnectTimeoutSeconds;
-            pingCmd.ExecuteScalar();
+            using (var pingReader = pingCmd.ExecuteReader())
+            {
+                if (pingReader.Read())
+                {
+                    ConnectedLogin = pingReader.IsDBNull(0) ? null : pingReader.GetString(0);
+                    ServerVersion = pingReader.IsDBNull(1) ? null : pingReader.GetString(1);
+                }
+            }
             stopwatch.Stop();
         }
         catch (Exception ex)
@@ -146,9 +153,37 @@ public sealed class SqlServerMonitor : IHealthMonitor
         catch (Exception ex)
         {
             _logger.LogDebug(ex, Strings.Log_SqlServerCheckFailed, subjectKey);
-            results.Add(Unavailable(subjectKey, Strings.Unavailable_SqlServerCheckFailed(ex.Message)));
+            results.Add(Unavailable(subjectKey, Strings.Unavailable_SqlServerCheckFailed(ex.Message) + PermissionHint(ex)));
         }
     }
+
+    /// <summary>
+    /// Security errors (severity 14: 229, 262, 297, 300, ... — the exact number and wording vary
+    /// by SQL Server version, e.g. 2022+ talks about VIEW SERVER PERFORMANCE STATE) get the
+    /// concrete GRANT spelled out, since this text ends up verbatim in the startup notification's
+    /// "not monitored" list, where the reader can't easily go look it up. GRANT VIEW SERVER STATE
+    /// is the right statement on every version (on 2022+ it implies the newer, narrower one).
+    /// </summary>
+    private string PermissionHint(Exception ex) => ex switch
+    {
+        MissingViewServerStateException => Strings.SqlServer_HintViewServerState(ConnectedLogin),
+        SqlException sql when sql.Message.Contains("xp_readerrorlog", StringComparison.OrdinalIgnoreCase)
+            => Strings.SqlServer_HintExecuteErrorLog(ConnectedLogin),
+        SqlException { Class: 14 } or SqlException { Number: 297 or 2571 } => Strings.SqlServer_HintViewServerState(ConnectedLogin), // 297 is severity 16 (DBCC SQLPERF denied), so class alone misses it
+        _ => "",
+    };
+
+    private sealed class MissingViewServerStateException : Exception
+    {
+        public MissingViewServerStateException() : base(Strings.SqlServer_ViewServerStateRequired) { }
+    }
+
+    /// <summary>The SQL login the last successful connection actually ran as (SUSER_SNAME()) —
+    /// with Windows authentication that's the service account, NOT anything in the INI's
+    /// UserName, which is why the GRANT hint uses this instead of the INI value.</summary>
+    public string? ConnectedLogin { get; private set; }
+
+    public string? ServerVersion { get; private set; }
 
     private void TryAddMany(List<MonitorResult> results, SqlConnection connection, string fallbackSubjectKey, Func<SqlConnection, List<MonitorResult>> check)
     {
@@ -159,7 +194,7 @@ public sealed class SqlServerMonitor : IHealthMonitor
         catch (Exception ex)
         {
             _logger.LogDebug(ex, Strings.Log_SqlServerCheckFailed, fallbackSubjectKey);
-            results.Add(Unavailable(fallbackSubjectKey, Strings.Unavailable_SqlServerCheckFailed(ex.Message)));
+            results.Add(Unavailable(fallbackSubjectKey, Strings.Unavailable_SqlServerCheckFailed(ex.Message) + PermissionHint(ex)));
         }
     }
 
@@ -221,6 +256,23 @@ public sealed class SqlServerMonitor : IHealthMonitor
 
     private MonitorResult CheckBlocking(SqlConnection connection)
     {
+        // Unlike the memory/connection DMVs, sys.dm_exec_requests does NOT raise a permission
+        // error without VIEW SERVER STATE — it silently returns only the caller's own requests,
+        // which would make this check report a permanent, false "0 blocked". Fail loudly instead.
+        using (var permCmd = connection.CreateCommand())
+        {
+            permCmd.CommandText = """
+                SELECT CASE WHEN ISNULL(HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE'), 0) = 1
+                              OR ISNULL(HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER PERFORMANCE STATE'), 0) = 1
+                            THEN 1 ELSE 0 END
+                """;
+            permCmd.CommandTimeout = _options.ConnectTimeoutSeconds;
+            if (Convert.ToInt32(permCmd.ExecuteScalar()) != 1)
+            {
+                throw new MissingViewServerStateException();
+            }
+        }
+
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT COUNT(*) AS BlockedCount, ISNULL(MAX(DATEDIFF(SECOND, r.start_time, GETDATE())), 0) AS MaxBlockedSeconds

@@ -140,7 +140,14 @@ if (args.Contains("--test-sql-server"))
 
     Console.WriteLine(Strings.Cli_TestingSqlServer);
     Console.WriteLine();
-    foreach (var result in monitor.Check())
+    var testResults = monitor.Check();
+    if (monitor.ConnectedLogin is not null)
+    {
+        Console.WriteLine(Strings.Cli_TestSqlServerIdentity(monitor.ConnectedLogin, monitor.ServerVersion));
+        Console.WriteLine();
+    }
+
+    foreach (var result in testResults)
     {
         var status = result.Unavailable ? $"N/D ({result.UnavailableReason})" : result.InRange ? "OK" : "ALERTA";
         Console.WriteLine($"[{status}] {result.Subject}: {result.DisplayValue}");
@@ -159,6 +166,15 @@ if (args.Contains("--send-summary"))
 {
     try
     {
+        var noChannel = !host.Services.GetRequiredService<SmtpAlertSender>().IsEnabled &&
+                        !host.Services.GetRequiredService<DiscordAlertSender>().IsConfigured;
+        if (noChannel)
+        {
+            Console.WriteLine(Strings.Cli_SummaryNoChannel);
+            Environment.ExitCode = 2; // distinct from 1 so the Viewer can say "turn on a channel" instead of "check the logs"
+            return;
+        }
+
         var summary = host.Services.GetRequiredService<DailySummaryService>();
         var sent = await summary.SendAsync(DateTimeOffset.Now, CancellationToken.None);
         Console.WriteLine(sent ? Strings.Cli_SummarySentOk : Strings.Cli_SummarySentFailed);

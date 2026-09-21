@@ -4,11 +4,13 @@ using ResourceAlerter.Localization;
 namespace ResourceAlerter.Alerting;
 
 /// <summary>
-/// Fans an alert out to every configured channel. Mail is the source-of-truth channel (it
-/// carries attachments and is what every existing "did it send?" signal — the Viewer's
-/// send-summary button, --send-summary's exit code — is based on), so this reports the mail
-/// result. Discord is a parallel, best-effort notification: attempted regardless, its own
-/// success/failure is logged but never affects the overall result or blocks mail delivery.
+/// Fans an alert out to every enabled channel. While SMTP is enabled it stays the
+/// source-of-truth channel (it carries attachments and is what every existing "did it send?"
+/// signal — the Viewer's send-summary button, --send-summary's exit code — is based on), so this
+/// reports the SMTP result and Discord is a parallel, best-effort notification: attempted
+/// regardless, its own success/failure is logged but never affects the overall result or blocks
+/// delivery. With SMTP switched off, Discord becomes the reported channel instead; with both
+/// off, nothing is sent and the result is false.
 /// </summary>
 public sealed class CompositeAlertSender : IAlertSender
 {
@@ -21,17 +23,25 @@ public sealed class CompositeAlertSender : IAlertSender
         _mailSender = mailSender;
         _discordSender = discordSender;
         _logger = logger;
+
+        if (!HasAnyChannel)
+        {
+            _logger.LogWarning(Strings.Log_NoNotificationChannel);
+        }
     }
+
+    public bool HasAnyChannel => _mailSender.IsEnabled || _discordSender.IsConfigured;
 
     public async Task<bool> SendAsync(AlertMessage message, CancellationToken cancellationToken)
     {
         var mailSent = await _mailSender.SendAsync(message, cancellationToken);
+        var discordSent = false;
 
         if (_discordSender.IsConfigured)
         {
             try
             {
-                await _discordSender.SendAsync(message, cancellationToken);
+                discordSent = await _discordSender.SendAsync(message, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -39,6 +49,6 @@ public sealed class CompositeAlertSender : IAlertSender
             }
         }
 
-        return mailSent;
+        return _mailSender.IsEnabled ? mailSent : discordSent;
     }
 }

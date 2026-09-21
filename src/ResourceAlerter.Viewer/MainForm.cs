@@ -257,6 +257,11 @@ public sealed class MainForm : Form
                 MessageBox.Show(Strings.Viewer_SummarySentOk,
                     "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+            else if (process.ExitCode == 2)
+            {
+                MessageBox.Show(Strings.Viewer_SummaryNoChannel,
+                    "ResourceAlerter Viewer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
             else
             {
                 MessageBox.Show(

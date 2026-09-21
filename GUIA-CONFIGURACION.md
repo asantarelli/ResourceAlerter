@@ -40,6 +40,7 @@ cliente de mail:
 
 | Campo | Notas |
 |---|---|
+| Habilitado | Es opcional. Destildado, no se intenta ningún envío por SMTP (ni se avisa por falta de destinatarios) — útil si solo querés avisos por Discord, o ninguno y mirar todo desde el Viewer. Si SMTP y Discord están ambos apagados, las alertas solo quedan en los logs y el Viewer, y el botón "Enviar resumen" te lo avisa. Por defecto está tildado, así que una instalación existente sigue mandando igual que antes. |
 | Servidor (Host) | La dirección de tu relay/servidor SMTP. |
 | Puerto | 25 sin cifrado, 587 con STARTTLS (lo más común hoy), 465 con SSL directo. |
 | Usar SSL/TLS | Depende de tu relay. Si usás el puerto 587 y tu relay lo requiere, probá activarlo. |
@@ -202,11 +203,36 @@ control del resto del servidor.
 | Umbral de espacio de log (%) | Alerta si el log de transacciones de alguna base supera este % de uso. Se mide por base (aparecen como series separadas en el Viewer); las bases de sistema (`master`, `model`, `msdb`, `tempdb`) se excluyen a propósito. |
 | Máx. errores nuevos en el log por ciclo | Alerta si aparecen más de esta cantidad de líneas "Error:" nuevas en el log de errores de SQL Server desde la última verificación. Default 0 = cualquier error nuevo alerta. El mensaje de la alerta incluye el texto de los errores encontrados, no solo la cantidad. |
 
-**Permisos necesarios:** el espacio de log y las conexiones/bloqueos funcionan con cualquier login
-que tenga el permiso `VIEW SERVER STATE`. El log de errores (`xp_readerrorlog`) necesita ser
-`sysadmin`, o que un DBA le haga un `GRANT EXECUTE` explícito sobre ese procedimiento — si el login
-no tiene permiso, esa medición puntual se omite en silencio (igual que un sensor ausente), el resto
-sigue funcionando.
+**Permisos necesarios:** memoria, conexiones, bloqueos y espacio de log necesitan que el login tenga
+`VIEW SERVER STATE`. Un administrador de SQL Server lo otorga así (conectado a `master`, con el
+nombre exacto del login entre corchetes):
+
+```sql
+USE master;
+GRANT VIEW SERVER STATE TO [nombre_del_login];
+```
+
+Sirve en todas las versiones (en SQL Server 2022 o superior el error habla de
+`VIEW SERVER PERFORMANCE STATE`, pero esa sentencia solo existe desde 2022 — `VIEW SERVER STATE` la
+incluye y funciona en cualquier versión). **Ojo con qué login:** es el que aparece en
+`ResourceAlerter.exe --test-sql-server` ("como el login: ..."). Con autenticación de Windows no es
+el `UserName` del INI sino la cuenta del servicio (normalmente `NT AUTHORITY\SYSTEM`).
+
+El log de errores (`xp_readerrorlog`) pide aparte ser `sysadmin`, o darle ejecución sobre ese
+procedimiento. Ojo: un `GRANT EXECUTE` se otorga a un **usuario de la base**, no a un login, y en
+`master` el login todavía no tiene usuario — por eso `GRANT EXECUTE ... TO [login]` solo da el error
+`Msg 15151: Cannot find the user`. Hay que crear el usuario primero:
+
+```sql
+USE master;
+CREATE USER [nombre_del_login] FOR LOGIN [nombre_del_login];   -- si ya existe, da error 15023: saltealo
+GRANT EXECUTE ON sys.xp_readerrorlog TO [nombre_del_login];
+```
+
+Sin estos permisos, esas mediciones quedan como "No monitoreado" con el error de SQL Server y la
+sentencia a ejecutar. Ese aviso se arma **solo cuando arranca el servicio**: después de otorgar el
+permiso, reiniciá el servicio ResourceAlerter para que se actualice (las mediciones en sí se
+reintentan solas en cada ciclo, sin reiniciar).
 
 **Nota:** por ahora no se mide el espacio de los archivos de **datos** (solo el del log) — medir
 el % usado de datos requiere conectarse a cada base individualmente, así que quedó afuera de esta

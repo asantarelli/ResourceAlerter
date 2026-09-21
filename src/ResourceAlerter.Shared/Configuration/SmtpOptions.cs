@@ -4,6 +4,13 @@ public sealed class SmtpOptions
 {
     public const string SectionName = "Smtp";
 
+    /// <summary>
+    /// False turns SMTP notifications off entirely (no send attempts, no "no recipients"
+    /// warnings) — e.g. when Discord is the only channel wanted. Defaults to true so an existing
+    /// appsettings.json that predates this setting keeps sending exactly as before.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 25;
     public bool UseSsl { get; set; } = false;

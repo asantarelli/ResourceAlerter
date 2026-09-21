@@ -253,6 +253,16 @@ public static class Strings
         count == 0 ? "0" : $"{count}: " + string.Join(" | ", snippets);
     public static string SqlServer_ErrorLogThreshold(int max) => $">{max}";
 
+    private static string HintLogin(string? login) => $"[{(string.IsNullOrWhiteSpace(login) ? "login" : login.Replace("]", "]]"))}]";
+    public static string SqlServer_ViewServerStateRequired => T(
+        "Falta el permiso VIEW SERVER STATE (sin él SQL Server devuelve solo tus propias sesiones y los bloqueos no se ven).",
+        "The VIEW SERVER STATE permission is missing (without it SQL Server returns only your own sessions, so blocking can't be seen).");
+    public static string SqlServer_HintViewServerState(string? login) => T(
+        $" -> Solución: un administrador de SQL Server debe ejecutar, conectado a la base master:  USE master; GRANT VIEW SERVER STATE TO {HintLogin(login)};  y después reiniciar el servicio ResourceAlerter (este aviso solo se genera al arrancar).",
+        $" -> Fix: a SQL Server administrator must run, connected to the master database:  USE master; GRANT VIEW SERVER STATE TO {HintLogin(login)};  and then restart the ResourceAlerter service (this notice is only produced at startup).");
+    public static string SqlServer_HintExecuteErrorLog(string? login) => T(
+        $" -> Solución: el login debe ser sysadmin, o un administrador debe ejecutar:  USE master; CREATE USER {HintLogin(login)} FOR LOGIN {HintLogin(login)}; GRANT EXECUTE ON sys.xp_readerrorlog TO {HintLogin(login)};  (si el usuario ya existe en master, alcanza con el GRANT)",
+        $" -> Fix: the login must be sysadmin, or an administrator must run:  USE master; CREATE USER {HintLogin(login)} FOR LOGIN {HintLogin(login)}; GRANT EXECUTE ON sys.xp_readerrorlog TO {HintLogin(login)};  (if the user already exists in master, the GRANT alone is enough)");
     public static string Unavailable_SqlServerNotConfigured => IsEs
         ? "SQL Server no está configurado (falta Monitoring.SqlServer.IniFilePath / IniSection)."
         : "SQL Server is not configured (missing Monitoring.SqlServer.IniFilePath / IniSection).";
@@ -331,6 +341,9 @@ public static class Strings
     public static string Viewer_SummarySendFailed => T(
         "El envío falló. Revisá el log del servicio (logs\\resourcealerter-*.log, carpeta de instalación) para el detalle.",
         "Sending failed. Check the service log (logs\\resourcealerter-*.log, install folder) for details.");
+    public static string Viewer_SummaryNoChannel => T(
+        "No hay ningún canal de notificación habilitado. Activá SMTP o Discord en Configuración para poder enviar el resumen.",
+        "No notification channel is enabled. Turn on SMTP or Discord in Settings to send the summary.");
     public static string Viewer_SummarySendError(string message) => T(
         $"No se pudo enviar el resumen:\r\n\r\n{message}", $"Could not send the summary:\r\n\r\n{message}");
     public static string Viewer_StartProcessFailed => T("No se pudo iniciar el proceso.", "Could not start the process.");
@@ -453,6 +466,9 @@ public static class Strings
     public static string Log_NoRecipients => T(
         "No hay destinatarios SMTP configurados; se descarta la alerta '{Subject}'",
         "No SMTP recipients configured; dropping alert '{Subject}'");
+    public static string Log_NoNotificationChannel => T(
+        "No hay ningún canal de notificación habilitado (SMTP y Discord desactivados): las alertas solo quedan en los logs y en el Viewer.",
+        "No notification channel is enabled (SMTP and Discord both off): alerts are only kept in the logs and the Viewer.");
     public static string Log_MailSent => T("Mail de alerta enviado: {Subject}", "Alert mail sent: {Subject}");
     public static string Log_MailRetrying => T(
         "Falló el envío del mail de alerta (intento {Attempt}/{Max}): {Subject}. Reintentando en {Delay}s.",
@@ -499,9 +515,12 @@ public static class Strings
     public static string Cli_ListSensorsDone => T(
         "Listo. Usá los nombres de sensor de arriba para ajustar Monitoring.Voltage.NominalRails en appsettings.<NOMBRE-MAQUINA>.json si un riel no coincide.",
         "Done. Use the sensor names above to adjust Monitoring.Voltage.NominalRails in appsettings.<MACHINE-NAME>.json if a rail isn't matching.");
-    public static string Cli_SummarySentOk => T("Mail de resumen diario enviado.", "Daily summary mail sent.");
+    public static string Cli_SummarySentOk => T("Resumen diario enviado.", "Daily summary sent.");
     public static string Cli_SummarySentFailed => T(
-        "El mail de resumen diario FALLÓ al enviarse (revisá los logs).", "Daily summary mail FAILED to send (check logs).");
+        "El resumen diario FALLÓ al enviarse (revisá los logs).", "Daily summary FAILED to send (check logs).");
+    public static string Cli_SummaryNoChannel => T(
+        "No hay ningún canal de notificación habilitado (SMTP y Discord desactivados); no se envió nada.",
+        "No notification channel is enabled (SMTP and Discord both off); nothing was sent.");
     public static string Cli_SummaryFailed(string message) => T($"Falló el resumen diario: {message}", $"Daily summary failed: {message}");
     public static string Cli_ListInterfacesDone => T(
         "Listo. Usá el nombre exacto de arriba (columna 'Name') para Monitoring.Network.InterfaceName en appsettings.<NOMBRE-MAQUINA>.json.",
@@ -512,6 +531,9 @@ public static class Strings
     public static string Cli_TestingSqlServer => T(
         "Probando el monitor de SQL Server con la configuración actual...",
         "Testing the SQL Server monitor with the current configuration...");
+    public static string Cli_TestSqlServerIdentity(string login, string? version) => T(
+        $"Conectado a SQL Server {version ?? "(versión desconocida)"} como el login: {login}   <- este es el login al que hay que darle permisos",
+        $"Connected to SQL Server {version ?? "(unknown version)"} as login: {login}   <- this is the login that needs the permissions");
     public static string Cli_TestSqlServerDone => T(
         "Listo. Si 'Connectivity' no aparece como OK arriba, ese es el motivo por el que no se graba ningún dato de SQL Server (y por lo tanto no aparece nada en el desplegable del Viewer). Revisá IniFilePath/IniSection en appsettings.json y el mensaje de error de arriba.",
         "Done. If 'Connectivity' doesn't show as OK above, that's why no SQL Server data is being recorded (and therefore nothing shows up in the Viewer's dropdown). Check IniFilePath/IniSection in appsettings.json and the error message above.");
