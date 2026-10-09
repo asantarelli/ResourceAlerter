@@ -3,7 +3,8 @@
 Windows service that watches a server's health — CPU, RAM, CPU temperature, PSU rail
 voltages, disk space, network health (packet loss/outages, latency, interface
 errors/traffic), and optionally SQL Server (connectivity, memory, connections, blocking,
-transaction log space, and its own error log) — and e-mails an alert when something goes
+transaction log space, and its own error log), and optionally a USB-connected UPS (power
+cuts, battery level) — and e-mails an alert when something goes
 out of range, with no external monitoring infrastructure (no Zabbix/PRTG/Docker/Linux). Built
 with .NET 8 (`Microsoft.Extensions.Hosting` + `Microsoft.Extensions.Hosting.WindowsServices`)
 and [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
@@ -28,7 +29,15 @@ for sensors.
 - A "service started on `<machine>` at `<time>`" mail is sent on every startup — an indirect
   signal that the box rebooted. It also lists exactly what's being actively monitored (with
   each threshold) and what got skipped on this particular machine, so you know your actual
-  sensor coverage without having to dig through logs.
+  sensor coverage without having to dig through logs. On the first start after a boot it also
+  says **how the previous shutdown ended** — orderly (and who/why), abrupt (power cut, forced
+  reset, blue screen with its code), and, if a UPS is monitored, whether the machine was
+  running on battery when it stopped — with a warning subject when it wasn't clean.
+- **UPS monitoring** (no vendor software): a UPS connected by USB is exposed by Windows as a
+  battery, so ResourceAlerter alerts on power cuts and on low charge while running on
+  battery. `ResourceAlerter.exe --test-ups` shows what Windows sees on a given machine.
+- **SMTP is optional** (`Smtp.Enabled`): with it off, Discord alone (or nothing but the
+  logs and the Viewer) can be the notification channel.
 - **Every reading is recorded** to a local SQLite database
   (`%ProgramData%\ResourceAlerter\resourcealerter.db` by default, retention configurable,
   default 90 days), along with every alert event (start/resolution).
@@ -273,9 +282,39 @@ Use the value from the `Name` column (not the longer hardware description) as
 ping-based loss/latency tracking keeps working regardless, since it doesn't depend on a local
 NIC selection.
 
+## Testing the UPS monitor (`--test-ups`)
+
+The UPS monitor relies on Windows exposing the UPS as a battery, which only happens for a UPS
+connected with its **USB data cable** (Windows lists it as "UPS Battery" / "HID UPS Battery"
+under Device Manager > Batteries). A UPS on a serial port, on the network (SNMP), or one whose
+vendor software replaces the Windows driver (PowerChute, WinPower, ...) can't be seen. Check
+what Windows reports on a given machine (no elevation needed, safe to run while the service is
+running — it only reads):
+
+```powershell
+cd "C:\Program Files\ResourceAlerter"
+.\ResourceAlerter.exe --test-ups
+```
+
+It prints whether a battery/UPS is detected, the current source (mains power or **battery**),
+the charge, the estimated runtime, and how the machine's previous shutdown ended. To test the
+whole chain with a real UPS:
+
+1. With the UPS plugged into the wall, `--test-ups` must say "UPS detected: yes" and "mains
+   power". "No" means Windows doesn't see it (see the note above).
+2. Unplug the UPS from the wall for ~15 seconds: the service sends the power-cut alert after the
+   sustained window (10 s by default), and `--test-ups` now shows "BATTERY". Plug it back in: the
+   "resolved" notification follows after the recovery window (30 s by default).
+3. Reboot the machine: the startup notification includes a "Previous shutdown" section (orderly,
+   or abrupt with the UPS context — e.g. "the battery ran out before an orderly shutdown").
+
+That section appears only on the first service start after a boot, and it works without any UPS
+(it reports orderly vs. abrupt shutdowns and blue-screen codes either way). `--test-ups` shows
+the same analysis of the last shutdown at any time.
+
 ## Resetting a monitor's recorded history (`--reset-records`)
 
-Each monitor's Settings tab (CPU/Memory/Disk/Temperature/Voltage/Network) has a **Reset
+Each monitor's Settings tab (CPU/Memory/Disk/Temperature/Voltage/Network/SQL Server/UPS) has a **Reset
 records** button that permanently deletes every `Samples`/`AlertEvents` row for that monitor —
 mainly useful right after an upgrade that changes what a monitor records (e.g. v4.0.0 switched
 Disk from GB to % free), so old and new data don't sit mixed in the same chart, without waiting
@@ -286,7 +325,7 @@ out the full `Database.RetentionDays` window. It shells out elevated to:
 ```
 
 `<MonitorName>` is the fixed internal key, not the translated display name: `CPU`, `Memory`,
-`Disk`, `Temperature`, `Voltage`, or `Network`. This only touches recorded history — it never
+`Disk`, `Temperature`, `Voltage`, `Network`, `SqlServer`, or `Ups`. This only touches recorded history — it never
 touches `appsettings.json` or any other monitor's data, and there's no undo.
 
 ## Testing before you trust it on a real server

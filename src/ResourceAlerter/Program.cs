@@ -79,6 +79,11 @@ builder.Services.AddSingleton<IHealthMonitor, TemperatureMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, VoltageMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, NetworkMonitor>();
 builder.Services.AddSingleton<IHealthMonitor, SqlServerMonitor>();
+builder.Services.AddSingleton<IPowerStatusReader, WindowsPowerStatusReader>();
+builder.Services.AddSingleton<RuntimeStateStore>();
+builder.Services.AddSingleton<IHealthMonitor, UpsMonitor>();
+builder.Services.AddSingleton<IShutdownEventSource, WindowsShutdownEventSource>();
+builder.Services.AddSingleton<PreviousShutdownAnalyzer>();
 
 builder.Services.AddHostedService<Worker>();
 
@@ -155,6 +160,105 @@ if (args.Contains("--test-sql-server"))
 
     Console.WriteLine();
     Console.WriteLine(Strings.Cli_TestSqlServerDone);
+    return;
+}
+
+// Shows what Windows itself reports about mains power / battery (a USB UPS appears as a
+// battery), then how the previous shutdown of the machine ended -- the two things the UPS monitor
+// and the startup notification are built on. Deliberately does NOT run UpsMonitor.Check(): that
+// records the UPS state to the same file the running service uses, and a diagnostic command
+// must not overwrite it.
+if (args.Contains("--test-ups"))
+{
+    Console.WriteLine(Strings.Cli_TestingUps);
+    Console.WriteLine();
+
+    try
+    {
+        var power = host.Services.GetRequiredService<IPowerStatusReader>().Read();
+        string Yes(bool v) => v ? Strings.T("sí", "yes") : "no";
+
+        Console.WriteLine(Strings.T("  Batería / UPS detectada : ", "  Battery / UPS detected  : ") + Yes(power.BatteryPresent));
+        if (power.BatteryPresent)
+        {
+            var source = power.OnMains switch
+            {
+                true => Strings.T("energía de red", "mains power"),
+                false => Strings.T("BATERÍA (sin energía de red)", "BATTERY (no mains power)"),
+                _ => Strings.T("desconocida", "unknown"),
+            };
+            Console.WriteLine(Strings.T("  Fuente actual           : ", "  Current source          : ") + source);
+            Console.WriteLine(Strings.T("  Carga                   : ", "  Charge                  : ") + (power.ChargePercent is { } c ? $"{c}%" : Strings.T("no informada", "not reported")));
+            Console.WriteLine(Strings.T("  Autonomía estimada      : ", "  Estimated runtime       : ") + (power.RuntimeMinutes is { } m ? $"{m} min" : Strings.T("no informada (normal con energía de red)", "not reported (normal on mains power)")));
+            Console.WriteLine(Strings.T("  Cargando                : ", "  Charging                : ") + Yes(power.Charging));
+        }
+
+        Console.WriteLine($"  (ACLineStatus={power.RawAcLineStatus}, BatteryFlag={power.RawBatteryFlag})");
+
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT Name, BatteryStatus, EstimatedChargeRemaining, EstimatedRunTime FROM Win32_Battery");
+            var batteries = searcher.Get().Cast<System.Management.ManagementBaseObject>().ToList();
+            Console.WriteLine(Strings.T($"  Win32_Battery (WMI)     : {batteries.Count} dispositivo(s)", $"  Win32_Battery (WMI)     : {batteries.Count} device(s)"));
+            foreach (var b in batteries)
+            {
+                Console.WriteLine($"    - {b["Name"]}  BatteryStatus={b["BatteryStatus"]}  Charge={b["EstimatedChargeRemaining"]}%  RunTime={b["EstimatedRunTime"]} min");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Win32_Battery (WMI)     : {ex.Message}");
+        }
+
+        if (!power.BatteryPresent)
+        {
+            Console.WriteLine();
+            Console.WriteLine(Strings.Cli_TestUpsNoBattery);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(Strings.Unavailable_UpsReadFailed(ex.Message));
+    }
+
+    var runtimeState = host.Services.GetRequiredService<RuntimeStateStore>().Previous;
+    if (runtimeState is not null)
+    {
+        Console.WriteLine();
+        Console.WriteLine(Strings.T("Último estado guardado por el servicio:", "Last state saved by the service:"));
+        Console.WriteLine("  " + Strings.T("Último latido : ", "Last heartbeat: ") + (runtimeState.LastSeenAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"));
+        if (runtimeState.Ups is { } savedUps)
+        {
+            Console.WriteLine("  UPS           : " + (savedUps.OnBattery ? Strings.T("en BATERÍA", "on BATTERY") : Strings.T("energía de red", "mains power"))
+                + (savedUps.ChargePercent is { } p ? $", {p}%" : "") + $" ({savedUps.ObservedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss})");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(Strings.Cli_TestUpsPrevShutdownHeader);
+    var shutdownAnalyzer = host.Services.GetRequiredService<PreviousShutdownAnalyzer>();
+    var processStart = System.Diagnostics.Process.GetCurrentProcess().StartTime;
+    var previous = shutdownAnalyzer.Analyze(processStart, onlyIfJustBooted: false);
+    if (previous is null)
+    {
+        Console.WriteLine("  " + Strings.Shutdown_Unknown.Trim());
+    }
+    else
+    {
+        foreach (var line in previous.Lines())
+        {
+            Console.WriteLine(line);
+        }
+
+        if (shutdownAnalyzer.Analyze(processStart, onlyIfJustBooted: true) is null)
+        {
+            Console.WriteLine(Strings.Cli_TestUpsPrevShutdownNotBoot);
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(Strings.Cli_TestUpsDone);
     return;
 }
 

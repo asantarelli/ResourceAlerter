@@ -64,6 +64,7 @@ public static class Strings
         "Voltage" => IsEs ? "Voltaje" : "Voltage",
         "Network" => IsEs ? "Red" : "Network",
         "SqlServer" => "SQL Server",
+        "Ups" => "UPS",
         _ => internalName,
     };
 
@@ -272,6 +273,114 @@ public static class Strings
     public static string Unavailable_SqlServerCheckFailed(string error) => IsEs
         ? $"Falló la consulta: {error}" : $"Query failed: {error}";
 
+    // ---- UPS ----
+    /// <summary>Fixed/English Subject keys — see <see cref="Memory_SubjectKey"/> for why.</summary>
+    public const string Ups_PowerSubjectKey = "Power Source";
+    public const string Ups_BatterySubjectKey = "Battery Charge";
+
+    public static string Ups_Power => IsEs ? "Fuente de energía" : "Power source";
+    public static string Ups_Battery => IsEs ? "Carga de la batería" : "Battery charge";
+
+    public static string Ups_OnMains => IsEs ? "Con energía de red" : "On mains power";
+    public static string Ups_OnBatteryPower => IsEs
+        ? "SIN energía de red: funcionando con la batería de la UPS (corte de energía)"
+        : "NO mains power: running on the UPS battery (power outage)";
+    public static string Ups_PowerThreshold => IsEs ? "tiene que haber energía de red" : "mains power must be present";
+
+    public static string Ups_BatteryValue(int percent, bool onBattery, int? runtimeMinutes)
+    {
+        var runtime = onBattery && runtimeMinutes is { } m
+            ? (IsEs ? $", autonomía estimada {m} min" : $", estimated runtime {m} min")
+            : "";
+        return onBattery
+            ? (IsEs ? $"{percent}% — descargando{runtime}" : $"{percent}% — discharging{runtime}")
+            : (IsEs ? $"{percent}% — con energía de red" : $"{percent}% — on mains power");
+    }
+    public static string Ups_BatteryThreshold(int thresholdPercent) =>
+        IsEs ? $"en batería y {thresholdPercent}% o menos" : $"on battery and {thresholdPercent}% or less";
+
+    public static string Unavailable_UpsNotDetected => IsEs
+        ? "No se detectó ninguna UPS (ni batería) conectada a este equipo. Si no usás una, deshabilitá este monitor; si tenés una por USB, ejecutá ResourceAlerter.exe --test-ups para ver qué reconoce Windows."
+        : "No UPS (or battery) was detected on this machine. If you don't use one, disable this monitor; if you have a USB one, run ResourceAlerter.exe --test-ups to see what Windows recognizes.";
+    public static string Unavailable_UpsSourceUnknown => IsEs
+        ? "Windows no informa si hay energía de red o si se está usando la batería."
+        : "Windows doesn't report whether mains power or the battery is in use.";
+    public static string Unavailable_UpsChargeUnknown => IsEs
+        ? "La UPS no informa su nivel de carga."
+        : "The UPS doesn't report its charge level.";
+    public static string Unavailable_UpsReadFailed(string error) => IsEs
+        ? $"No se pudo leer el estado de energía: {error}" : $"Failed to read the power status: {error}";
+
+    public static string Log_UpsReadFailed => T("Falló la lectura del estado de energía/UPS", "Failed to read the power/UPS status");
+    public static string Log_RuntimeStateReadFailed => T(
+        "No se pudo leer el estado de ejecución previo de {Path}; el análisis del cierre anterior será menos preciso",
+        "Could not read the previous runtime state from {Path}; the previous-shutdown analysis will be less precise");
+    public static string Log_RuntimeStateWriteFailed => T(
+        "No se pudo guardar el estado de ejecución en {Path}", "Could not save the runtime state to {Path}");
+    public static string Log_PreviousShutdown => T("Cierre anterior del equipo: {Summary}", "Previous shutdown: {Summary}");
+    public static string Log_PreviousShutdownFailed => T(
+        "No se pudo analizar cómo terminó la sesión anterior", "Could not analyze how the previous session ended");
+
+    // ---- Previous shutdown report (startup notification) ----
+    public static string Startup_PreviousShutdownHeader => T("Cierre anterior del equipo:", "Previous shutdown:");
+
+    public static string Subject_ServiceStartedUnclean(string machine) => IsEs
+        ? $"[{machine}] ADVERTENCIA: servicio ResourceAlerter iniciado tras un apagado NO limpio"
+        : $"[{machine}] WARNING: ResourceAlerter service started after an unclean shutdown";
+
+    private static string FormatWhen(DateTime? local) =>
+        local is { } t ? t.ToString("yyyy-MM-dd HH:mm:ss") : (IsEs ? "hora desconocida" : "unknown time");
+
+    public static string Shutdown_Clean(DateTime? when, string? detail) => IsEs
+        ? $"  - Ordenado ({FormatWhen(when)}). {detail}".TrimEnd()
+        : $"  - Clean ({FormatWhen(when)}). {detail}".TrimEnd();
+    public static string Shutdown_InitiatedByUser(string user, string process, string kind, string reason) => IsEs
+        ? $"Iniciado por {user} desde {process} ({kind}); motivo: {reason}."
+        : $"Initiated by {user} from {process} ({kind}); reason: {reason}.";
+    public static string Shutdown_InitiatedBySystem(string? action, string? reasonCode) => IsEs
+        ? $"Lo inició el administrador de energía de Windows (acción {action ?? "?"}, motivo {reasonCode ?? "?"}); no lo inició ningún usuario."
+        : $"Initiated by the Windows power manager (action {action ?? "?"}, reason {reasonCode ?? "?"}); no user initiated it.";
+    public static string Shutdown_Unexpected(DateTime? lastActivity) => IsEs
+        ? $"  - NO LIMPIO: el equipo se apagó o se reinició de golpe (corte de energía, reinicio forzado o falla). Último registro de actividad de este servicio: {FormatWhen(lastActivity)}."
+        : $"  - UNCLEAN: the machine lost power or restarted abruptly (power cut, forced reset or failure). Last activity recorded by this service: {FormatWhen(lastActivity)}.";
+    public static string Shutdown_Bugcheck(uint code, DateTime? lastActivity) => IsEs
+        ? $"  - NO LIMPIO: Windows se detuvo por una falla grave (pantalla azul, código 0x{code:X}). Último registro de actividad de este servicio: {FormatWhen(lastActivity)}."
+        : $"  - UNCLEAN: Windows stopped on a critical failure (blue screen, code 0x{code:X}). Last activity recorded by this service: {FormatWhen(lastActivity)}.";
+    public static string Shutdown_Unknown => IsEs
+        ? "  - No se pudo determinar cómo terminó la sesión anterior (el registro de eventos de Windows no tiene datos suficientes)."
+        : "  - Could not determine how the previous session ended (the Windows event log has insufficient data).";
+
+    private static string UpsLevel(int? percent, DateTime observedLocal) =>
+        percent is { } p
+            ? (IsEs ? $"último nivel registrado: {p}%, a las {observedLocal:HH:mm:ss}" : $"last recorded level: {p}%, at {observedLocal:HH:mm:ss}")
+            : (IsEs ? $"último registro a las {observedLocal:HH:mm:ss}" : $"last record at {observedLocal:HH:mm:ss}");
+    public static string Shutdown_UpsCleanOnBattery(int? percent, DateTime observedLocal) => IsEs
+        ? $"  - UPS: el equipo estaba funcionando con la batería ({UpsLevel(percent, observedLocal)}) y se apagó de forma ordenada: apagado por batería baja, el comportamiento esperado."
+        : $"  - UPS: the machine was running on battery ({UpsLevel(percent, observedLocal)}) and shut down in an orderly way: a low-battery shutdown, as expected.";
+    public static string Shutdown_UpsUncleanOnBattery(int? percent, DateTime observedLocal) => IsEs
+        ? $"  - UPS: el equipo estaba funcionando con la batería ({UpsLevel(percent, observedLocal)}) y se apagó de golpe: lo más probable es que la batería se agotó antes de poder apagarse ordenadamente. Conviene revisar en Windows (Opciones de energía) que la acción de batería baja/crítica apague el equipo con margen suficiente."
+        : $"  - UPS: the machine was running on battery ({UpsLevel(percent, observedLocal)}) and then stopped abruptly: the battery most likely ran out before an orderly shutdown. Check in Windows (Power Options) that the low/critical battery action shuts the machine down with enough margin.";
+    public static string Shutdown_UpsUncleanOnMains(int? percent, DateTime observedLocal) => IsEs
+        ? $"  - UPS: el último registro mostraba energía de red normal ({UpsLevel(percent, observedLocal)}), o sea que la UPS no informó ningún corte antes de que el equipo se detuviera."
+        : $"  - UPS: the last record showed normal mains power ({UpsLevel(percent, observedLocal)}), so the UPS reported no outage before the machine stopped.";
+
+    // ---- CLI: --test-ups ----
+    public static string Cli_TestingUps => T(
+        "Leyendo el estado de energía que ve Windows en este equipo...",
+        "Reading the power status Windows sees on this machine...");
+    public static string Cli_TestUpsNoBattery => T(
+        "Windows NO ve ninguna batería ni UPS en este equipo (es lo normal en una PC de escritorio sin UPS conectada por USB).\r\nSi tenés una UPS: tiene que estar conectada con el cable USB de datos, y Windows tiene que mostrarla como \"Batería SAI (UPS) HID\" en el Administrador de dispositivos > Baterías. Si la UPS usa un programa propio (PowerChute, WinPower, etc.) que reemplaza el driver, o se conecta por puerto serie o red (SNMP), este monitor no la puede ver.",
+        "Windows sees NO battery or UPS on this machine (normal for a desktop PC without a USB-connected UPS).\r\nIf you have a UPS: it must be connected with its USB data cable, and Windows must list it as \"UPS Battery\" / \"HID UPS Battery\" under Device Manager > Batteries. If the UPS uses its own software (PowerChute, WinPower, etc.) that replaces the driver, or connects over a serial port or network (SNMP), this monitor can't see it.");
+    public static string Cli_TestUpsPrevShutdownHeader => T(
+        "Cierre anterior del equipo (lo mismo que verías en el aviso de arranque):",
+        "Previous shutdown (the same you'd see in the startup notification):");
+    public static string Cli_TestUpsPrevShutdownNotBoot => T(
+        "  (este proceso no se inició justo después de arrancar el equipo, así que el aviso de arranque no incluiría esta sección; se muestra igual el último cierre del equipo)",
+        "  (this process didn't start right after boot, so the startup notification would not include this section; the machine's last shutdown is shown anyway)");
+    public static string Cli_TestUpsDone => T(
+        "Listo. Si ves la UPS arriba pero ResourceAlerter no la monitorea, revisá que el monitor UPS esté habilitado en Configuración.",
+        "Done. If you can see the UPS above but ResourceAlerter isn't monitoring it, check that the UPS monitor is enabled in Settings.");
+
     // ---- "Sensor unavailable" reasons (shown to the admin in the startup mail) ----
     public static string Unavailable_ProcessorCounterInit => IsEs
         ? "No se pudo inicializar el contador de rendimiento del procesador."
@@ -324,6 +433,8 @@ public static class Strings
             ("SqlServer", SqlServer_BlockingSubjectKey) => SqlServer_Blocking,
             ("SqlServer", SqlServer_ErrorLogSubjectKey) => SqlServer_ErrorLog,
             ("SqlServer", SqlServer_LogSpaceSubjectKey) => SqlServer_LogSpace,
+            ("Ups", Ups_PowerSubjectKey) => Ups_Power,
+            ("Ups", Ups_BatterySubjectKey) => Ups_Battery,
             _ => subjectKey, // per-database Log Space subjects use the DB name directly, like Disk's drive letters
         };
 
@@ -526,8 +637,8 @@ public static class Strings
         "Listo. Usá el nombre exacto de arriba (columna 'Name') para Monitoring.Network.InterfaceName en appsettings.<NOMBRE-MAQUINA>.json.",
         "Done. Use the exact name above ('Name' column) for Monitoring.Network.InterfaceName in appsettings.<MACHINE-NAME>.json.");
     public static string Cli_ResetRecordsMissingArg => T(
-        "Uso: ResourceAlerter.exe --reset-records <NombreDelMonitor> (ej: CPU, Memory, Disk, Temperature, Voltage, Network)",
-        "Usage: ResourceAlerter.exe --reset-records <MonitorName> (e.g. CPU, Memory, Disk, Temperature, Voltage, Network)");
+        "Uso: ResourceAlerter.exe --reset-records <NombreDelMonitor> (ej: CPU, Memory, Disk, Temperature, Voltage, Network, SqlServer, Ups)",
+        "Usage: ResourceAlerter.exe --reset-records <MonitorName> (e.g. CPU, Memory, Disk, Temperature, Voltage, Network, SqlServer, Ups)");
     public static string Cli_TestingSqlServer => T(
         "Probando el monitor de SQL Server con la configuración actual...",
         "Testing the SQL Server monitor with the current configuration...");

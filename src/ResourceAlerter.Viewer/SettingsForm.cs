@@ -113,6 +113,7 @@ public sealed class SettingsForm : Form
         tabs.TabPages.Add(BuildVoltageTab());
         tabs.TabPages.Add(BuildNetworkTab());
         tabs.TabPages.Add(BuildSqlServerTab());
+        tabs.TabPages.Add(BuildUpsTab());
         tabs.TabPages.Add(BuildDatabaseTab());
         tabs.TabPages.Add(BuildLoggingTab());
 
@@ -410,6 +411,45 @@ public sealed class SettingsForm : Form
         }
     }
 
+    private NumericUpDown _upsLowBatteryBox = null!;
+
+    private TabPage BuildUpsTab()
+    {
+        var page = new TabPage("UPS");
+        var panel = NewPanel(7);
+        var ups = _bundle.Monitoring.Ups;
+
+        var controls = new MonitorControls { Enabled = AddCheck(panel, 0, Strings.T("Habilitado:", "Enabled:"), ups.Enabled) };
+        _upsLowBatteryBox = AddNumeric(panel, 1, Strings.T("Alertar con la UPS en batería al (% o menos):", "Alert when on battery at (% or less):"), ups.LowBatteryThresholdPercent, 1, 100);
+        controls.SustainedWindowSeconds = AddNumeric(panel, 2, Strings.T("Ventana sostenida (segundos):", "Sustained window (seconds):"), ups.SustainedWindowSeconds, 1, 3600);
+        controls.RecoveryWindowSeconds = AddNumeric(panel, 3, Strings.T("Ventana de recuperación (segundos):", "Recovery window (seconds):"), ups.RecoveryWindowSeconds, 1, 3600);
+        controls.ReminderIntervalMinutes = AddNumeric(panel, 4, Strings.T("Recordatorio cada (minutos):", "Reminder every (minutes):"), ups.ReminderIntervalMinutes, 1, 1440);
+
+        var note = new Label
+        {
+            Text = Strings.T(
+                "Detecta una UPS conectada por USB (Windows la ve como una batería, sin software del fabricante).\n" +
+                "Avisa cuando se corta la energía de red y cuando, funcionando con la batería, la carga baja del valor\n" +
+                "indicado. Además, cada vez que el equipo arranca informa cómo terminó el apagado anterior (ordenado,\n" +
+                "brusco, por batería agotada, etc.). Si no hay ninguna UPS, el aviso de arranque lo indica y no se genera\n" +
+                "ninguna alerta. Para ver qué reconoce Windows: ResourceAlerter.exe --test-ups",
+                "Detects a UPS connected by USB (Windows sees it as a battery, no vendor software needed).\n" +
+                "Alerts when mains power is lost and when, while on battery, the charge drops to the level above.\n" +
+                "Also, every time the machine boots it reports how the previous shutdown ended (orderly, abrupt,\n" +
+                "battery exhausted, etc.). With no UPS, the startup notice says so and no alert is raised.\n" +
+                "To see what Windows recognizes: ResourceAlerter.exe --test-ups"),
+            AutoSize = true,
+            ForeColor = Color.Gray,
+        };
+        panel.Controls.Add(note, 0, 5);
+        panel.SetColumnSpan(note, 2);
+        panel.Controls.Add(BuildResetRecordsButton("Ups"), 0, 6);
+
+        _monitorControls["Ups"] = controls;
+        page.Controls.Add(panel);
+        return page;
+    }
+
     private TabPage BuildSqlServerTab()
     {
         var page = new TabPage("SQL Server");
@@ -436,15 +476,17 @@ public sealed class SettingsForm : Form
                 "No se guarda usuario/contraseña acá — se leen del archivo INI de conexión que ya usa tu\n" +
                 "aplicación (ej. el .ini de un driver MSSQL de Clarion), sección [Nombre] con claves\n" +
                 "Server/DatabaseName/UserName/Password/Port/UseWindowsAuthentication. Se relee en cada\n" +
-                "verificación, así que un cambio de contraseña en el .ini se toma solo. El log de errores\n" +
-                "y los jobs de SQL Agent requieren que el login tenga permiso VIEW SERVER STATE como mínimo\n" +
-                "(el login \"sa\" ya lo tiene); si no lo tiene, esas mediciones se omiten en silencio.",
+                "verificación, así que un cambio de contraseña en el .ini se toma solo. Memoria, conexiones,\n" +
+                "bloqueos y espacio de log requieren que el login tenga el permiso VIEW SERVER STATE; el log de\n" +
+                "errores además requiere ser sysadmin. Sin permiso, esas mediciones figuran como \"No monitoreado\"\n" +
+                "en el aviso de arranque, con la sentencia exacta para solucionarlo.",
                 "No username/password is stored here — they're read from the connection INI file your\n" +
                 "app already uses (e.g. a Clarion MSSQL driver's .ini), section [Name] with keys\n" +
                 "Server/DatabaseName/UserName/Password/Port/UseWindowsAuthentication. Re-read on every\n" +
-                "check, so a password change in the .ini is picked up automatically. The error log check\n" +
-                "needs the login to have at least VIEW SERVER STATE permission (the \"sa\" login already\n" +
-                "has it); silently skipped otherwise."),
+                "check, so a password change in the .ini is picked up automatically. Memory, connections,\n" +
+                "blocking and log space need the login to have the VIEW SERVER STATE permission; the error\n" +
+                "log also needs sysadmin. Without permission those readings are listed as \"Not monitored\"\n" +
+                "in the startup notice, with the exact statement to fix it."),
             AutoSize = true,
             ForeColor = Color.Gray,
         };
@@ -559,6 +601,9 @@ public sealed class SettingsForm : Form
         _bundle.Monitoring.SqlServer.MaxBlockingSeconds = (int)_sqlMaxBlockingSecondsBox.Value;
         _bundle.Monitoring.SqlServer.LogSpaceUsedThresholdPercent = (double)_sqlLogSpaceThresholdBox.Value;
         _bundle.Monitoring.SqlServer.MaxNewErrorLogEntriesPerInterval = (int)_sqlMaxErrorLogEntriesBox.Value;
+
+        ApplyMonitorBase(_bundle.Monitoring.Ups, "Ups");
+        _bundle.Monitoring.Ups.LowBatteryThresholdPercent = (int)_upsLowBatteryBox.Value;
 
         _bundle.Database.Path = _dbPathBox.Text.Trim();
         _bundle.Database.RetentionDays = (int)_dbRetentionBox.Value;

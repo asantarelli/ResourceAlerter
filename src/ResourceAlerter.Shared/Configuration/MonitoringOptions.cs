@@ -13,6 +13,7 @@ public sealed class MonitoringOptions
     public NetworkOptions Network { get; set; } = new();
     public DiskOptions Disk { get; set; } = new();
     public SqlServerOptions SqlServer { get; set; } = new();
+    public UpsOptions Ups { get; set; } = new();
 }
 
 public abstract class MonitorOptionsBase
@@ -149,4 +150,26 @@ public sealed class SqlServerOptions : MonitorOptionsBase
     /// <c>xp_readerrorlog</c> (sysadmin, or an explicit GRANT) — silently skipped otherwise.
     /// </summary>
     public int MaxNewErrorLogEntriesPerInterval { get; set; } = 0;
+}
+
+public sealed class UpsOptions : MonitorOptionsBase
+{
+    /// <summary>
+    /// A power cut has to be noticed fast to be useful, so these default much shorter than the
+    /// other monitors' 60s windows. The recovery window stays longer so a brief return of mains
+    /// power in the middle of an outage doesn't send a premature "resolved" and then a new alert.
+    /// </summary>
+    public UpsOptions()
+    {
+        SustainedWindowSeconds = 10;
+        RecoveryWindowSeconds = 30;
+        ReminderIntervalMinutes = 10;
+    }
+
+    /// <summary>
+    /// Alert when the UPS is running on battery AND its charge is at or below this percentage.
+    /// Deliberately NOT triggered while on mains power: after an outage the battery recharges for
+    /// hours, and a "low battery" alert during that time would just be noise.
+    /// </summary>
+    public int LowBatteryThresholdPercent { get; set; } = 50;
 }

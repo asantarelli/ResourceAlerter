@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,8 @@ public sealed class Worker : BackgroundService
     private readonly IAlertSender _alertSender;
     private readonly DataRecorder _dataRecorder;
     private readonly DailySummaryService _dailySummary;
+    private readonly RuntimeStateStore _runtimeState;
+    private readonly PreviousShutdownAnalyzer _shutdownAnalyzer;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<Worker> _logger;
     private readonly string _machineName;
@@ -37,6 +40,8 @@ public sealed class Worker : BackgroundService
         IAlertSender alertSender,
         DataRecorder dataRecorder,
         DailySummaryService dailySummary,
+        RuntimeStateStore runtimeState,
+        PreviousShutdownAnalyzer shutdownAnalyzer,
         ILoggerFactory loggerFactory,
         ILogger<Worker> logger)
     {
@@ -45,6 +50,8 @@ public sealed class Worker : BackgroundService
         _alertSender = alertSender;
         _dataRecorder = dataRecorder;
         _dailySummary = dailySummary;
+        _runtimeState = runtimeState;
+        _shutdownAnalyzer = shutdownAnalyzer;
         _loggerFactory = loggerFactory;
         _logger = logger;
         _machineName = string.IsNullOrWhiteSpace(generalOptions.Value.MachineName)
@@ -69,12 +76,16 @@ public sealed class Worker : BackgroundService
         _logger.LogInformation(Strings.Log_WorkerStarting,
             AppInfo.Version, _machineName, _options.PollingIntervalSeconds, string.Join(", ", _monitors.Select(m => m.Name)));
 
+        // Must run before the first probe: that is what starts overwriting the runtime state the
+        // analysis reads (although RuntimeStateStore.Previous is already captured at construction).
+        var previousShutdown = AnalyzePreviousShutdown();
+
         // Probe once up front so the startup mail can report exactly what's actually being
         // watched on this machine (and what got skipped for lack of a sensor), then feed those
         // same results into the trackers as the first real cycle instead of checking twice.
         var initialCycle = ProbeAllMonitors();
         PruneOrphanedSeries(initialCycle);
-        await SendStartupNotificationAsync(initialCycle, stoppingToken);
+        await SendStartupNotificationAsync(initialCycle, previousShutdown, stoppingToken);
         await ProcessCycleAsync(initialCycle, stoppingToken);
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, _options.PollingIntervalSeconds)));
@@ -90,6 +101,17 @@ public sealed class Worker : BackgroundService
         {
             // Normal shutdown.
         }
+    }
+
+    private PreviousShutdownInfo? AnalyzePreviousShutdown()
+    {
+        var info = _shutdownAnalyzer.Analyze(Process.GetCurrentProcess().StartTime);
+        if (info is not null)
+        {
+            _logger.LogInformation(Strings.Log_PreviousShutdown, string.Join(" ", info.Lines().Select(l => l.Trim())));
+        }
+
+        return info;
     }
 
     private List<(IHealthMonitor Monitor, IReadOnlyList<MonitorResult> Results)> ProbeAllMonitors()
@@ -144,6 +166,8 @@ public sealed class Worker : BackgroundService
 
     private async Task ProcessCycleAsync(List<(IHealthMonitor Monitor, IReadOnlyList<MonitorResult> Results)> cycle, CancellationToken stoppingToken)
     {
+        _runtimeState.Touch();
+
         var now = DateTimeOffset.UtcNow;
         var samples = new List<SampleRecord>();
 
@@ -196,6 +220,7 @@ public sealed class Worker : BackgroundService
 
     private async Task SendStartupNotificationAsync(
         List<(IHealthMonitor Monitor, IReadOnlyList<MonitorResult> Results)> initialCycle,
+        PreviousShutdownInfo? previousShutdown,
         CancellationToken stoppingToken)
     {
         try
@@ -204,15 +229,26 @@ public sealed class Worker : BackgroundService
                 ? ""
                 : Strings.Startup_RecordingWarning(_dataRecorder.InitializationError);
 
+            var shutdownSection = previousShutdown is null
+                ? ""
+                : Strings.Startup_PreviousShutdownHeader + "\r\n" + string.Join("\r\n", previousShutdown.Lines()) + "\r\n\r\n";
+
+            var subject = !_dataRecorder.IsAvailable
+                ? Strings.Subject_ServiceStarted(_machineName, warning: true)
+                : previousShutdown is { IsUnclean: true }
+                    ? Strings.Subject_ServiceStartedUnclean(_machineName)
+                    : Strings.Subject_ServiceStarted(_machineName, warning: false);
+
             await _alertSender.SendAsync(new AlertMessage
             {
                 Kind = AlertKind.ServiceStarted,
-                Subject = Strings.Subject_ServiceStarted(_machineName, warning: !_dataRecorder.IsAvailable),
+                Subject = subject,
                 Body =
                     $"{Strings.Label_Machine}: {_machineName}\r\n" +
                     $"{Strings.Label_Version}: {AppInfo.Version}\r\n" +
                     $"{Strings.Label_StartedAt}: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}\r\n" +
                     recordingWarning + "\r\n" +
+                    shutdownSection +
                     BuildMonitoringSummary(initialCycle) +
                     "\r\n" + Strings.Startup_Footer,
             }, stoppingToken);

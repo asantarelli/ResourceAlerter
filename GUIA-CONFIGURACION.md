@@ -11,7 +11,7 @@ Al guardar, te ofrece **reiniciar el servicio** (pide elevación de Windows) par
 se apliquen al toque. Si decís que no, los cambios quedan guardados igual, pero no se van a
 aplicar hasta el próximo reinicio del servicio.
 
-Las solapas de los 7 monitores (CPU, Memoria, Disco, Temperatura, Voltaje, Red, SQL Server) tienen además un
+Las solapas de los 8 monitores (CPU, Memoria, Disco, Temperatura, Voltaje, Red, SQL Server, UPS) tienen además un
 botón **Reiniciar registros**, que borra permanentemente de la base de datos todo el historial
 guardado de ese monitor (gráficos del Viewer y alertas registradas) — pide confirmación antes de
 borrar, y elevación de Windows (usa el mismo mecanismo que "Guardar y reiniciar servicio"). Sirve
@@ -252,6 +252,64 @@ chequeo — si "Connectivity" no sale como `[OK]`, ahí mismo aparece el mensaje
 (usuario/contraseña incorrectos, servidor inalcanzable, `IniFilePath`/`IniSection` mal
 configurados, etc.). Lo mismo queda también en `logs\resourcealerter-<fecha>.log` (nivel
 Advertencia) cuando lo hace el servicio real.
+
+---
+
+## UPS
+
+Si el equipo está conectado a una **UPS por cable USB**, Windows la reconoce como una batería (en el
+Administrador de dispositivos aparece como "Batería SAI (UPS) HID", sin instalar nada del
+fabricante). ResourceAlerter usa eso para controlar:
+
+- **Fuente de energía:** avisa cuando se corta la energía de red y el equipo pasa a funcionar con la
+  batería de la UPS, y avisa cuando vuelve. Las ventanas sostenida/recuperación son más cortas que
+  en los otros monitores (10 y 30 segundos por defecto) porque un corte hay que enterarse rápido.
+- **Carga de la batería:** avisa si, **funcionando con la batería**, la carga baja del umbral (50%
+  por defecto). Con energía de red no avisa nunca: después de un corte la batería tarda horas en
+  recargarse y eso sería solo ruido. El aviso incluye la autonomía estimada si la UPS la informa.
+
+| Campo | Notas |
+|---|---|
+| Habilitado | Si el equipo no tiene ninguna UPS (ni batería), el aviso de arranque lo lista como "No monitoreado" y no se genera ninguna alerta; podés deshabilitarlo si no querés esa línea. |
+| Alertar con la UPS en batería al (% o menos) | Umbral de carga. Solo aplica funcionando con batería. |
+| Ventana sostenida / recuperación / recordatorio | Igual que en los demás monitores. |
+
+**Para comprobar qué ve Windows** en un equipo (antes de confiar en el monitor), corré desde la
+carpeta de instalación:
+
+```
+.\ResourceAlerter.exe --test-ups
+```
+
+Muestra si hay batería/UPS, si está con energía de red o con batería, la carga y la autonomía
+estimada. Si dice que no ve ninguna UPS, es que la UPS no está conectada por USB o que usa un
+programa propio (PowerChute, WinPower, etc.) que reemplaza el driver de Windows, o se conecta por
+puerto serie o red (SNMP): en esos casos este monitor no puede verla.
+
+Ojo con dos límites: (1) el aviso de corte solo sale si el equipo de red (router/switch) también
+está conectado a la UPS, porque hace falta red para mandarlo; (2) una notebook con su batería
+interna se comporta igual que una UPS (avisa al desenchufarla), así que conviene deshabilitar el
+monitor ahí.
+
+### Cómo terminó el apagado anterior
+
+Esto **no depende de tener una UPS**. Cada vez que el equipo arranca, el aviso de inicio del
+servicio incluye una sección "Cierre anterior del equipo" que dice:
+
+- **Ordenado:** cuándo, y quién o qué lo inició (usuario y programa, o el administrador de energía
+  de Windows) y con qué motivo.
+- **NO limpio:** el equipo se apagó o reinició de golpe (corte de energía, reinicio forzado, falla),
+  o se detuvo por una pantalla azul (con su código). En ese caso el asunto del aviso pasa a ser
+  "ADVERTENCIA: servicio ResourceAlerter iniciado tras un apagado NO limpio". La hora que se muestra
+  es la del último registro de actividad del servicio (con unos 30 segundos de precisión).
+- Si hay una **UPS** monitoreada, además dice si el equipo estaba funcionando con la batería en ese
+  momento: ordenado con batería baja es "apagado por batería baja, lo esperado"; abrupto con batería
+  es "la batería se agotó antes de poder apagarse ordenadamente" (y conviene revisar en Windows >
+  Opciones de energía que la acción de batería baja/crítica apague el equipo con margen suficiente).
+
+Esa sección solo aparece en el **primer arranque del servicio después de encender el equipo**; si
+solo reiniciás el servicio, no hay ningún apagado para informar. `--test-ups` muestra el mismo
+análisis del último apagado en cualquier momento.
 
 ---
 
