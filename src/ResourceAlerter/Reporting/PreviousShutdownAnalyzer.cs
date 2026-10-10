@@ -85,9 +85,29 @@ public sealed record PreviousShutdownInfo(
     DateTime? When,
     uint? BugcheckCode,
     string? CleanDetail,
-    UpsSnapshot? Ups)
+    UpsSnapshot? Ups,
+    DateTime? BootTime)
 {
     public bool IsUnclean => Kind == ShutdownKind.Unexpected;
+
+    /// <summary>
+    /// Text for the alert history, or null when the shutdown isn't worth an entry there. An
+    /// ordinary orderly shutdown (someone turned the machine off) is not an incident; an abrupt
+    /// one is, and so is an orderly one forced by an empty UPS battery — that is the tail end of a
+    /// power outage and the daily summary should say so.
+    /// </summary>
+    public string? HistoryDescription()
+    {
+        if (Kind == ShutdownKind.Unexpected)
+        {
+            var text = BugcheckCode is > 0 ? Strings.ShutdownEvent_Bugcheck(BugcheckCode.Value) : Strings.ShutdownEvent_Unclean;
+            return Ups is { OnBattery: true } ? text + Strings.ShutdownEvent_OnBatterySuffix(Ups.ChargePercent) : text;
+        }
+
+        return Kind == ShutdownKind.Clean && Ups is { OnBattery: true }
+            ? Strings.ShutdownEvent_LowBattery(Ups.ChargePercent)
+            : null;
+    }
 
     /// <summary>The lines for the startup notification (and the log): the verdict, then the UPS context if any.</summary>
     public IReadOnlyList<string> Lines()
@@ -179,7 +199,7 @@ public sealed class PreviousShutdownAnalyzer
         var boot = events.FirstOrDefault(e => e.Provider == "EventLog" && e.Id == 6005);
         if (boot is null)
         {
-            return onlyIfJustBooted ? null : Build(ShutdownKind.Unknown, null, null, null);
+            return onlyIfJustBooted ? null : Build(ShutdownKind.Unknown, null, null, null, null);
         }
 
         if (onlyIfJustBooted && (processStartLocal < boot.TimeLocal - UncleanMarkerWindowBefore || processStartLocal - boot.TimeLocal > MaxBootToServiceStart))
@@ -187,7 +207,20 @@ public sealed class PreviousShutdownAnalyzer
             return null;
         }
 
+        // If the previous run of this service was alive AFTER the machine booted, this is not the first
+        // start since boot (the service was just restarted): there is no shutdown to report, and the
+        // saved heartbeat/UPS state belong to the current boot session, not to the one that ended.
         var lastSeen = _state.Previous?.LastSeenAt?.LocalDateTime;
+        var stateIsFromThisBoot = lastSeen is { } seen && seen > boot.TimeLocal;
+        if (stateIsFromThisBoot)
+        {
+            if (onlyIfJustBooted)
+            {
+                return null;
+            }
+
+            lastSeen = null; // diagnostics still analyze the shutdown, but must not show a time after the boot
+        }
 
         // Windows writes these two right after boot when the previous session did not end cleanly.
         bool NearBoot(ShutdownEvent e) =>
@@ -200,20 +233,20 @@ public sealed class PreviousShutdownAnalyzer
             uint? bugcheck = kernelPower41 is not null
                 && kernelPower41.Named.TryGetValue("BugcheckCode", out var raw)
                 && uint.TryParse(raw, out var code) ? code : null;
-            return Build(ShutdownKind.Unexpected, lastSeen, bugcheck, null);
+            return Build(ShutdownKind.Unexpected, lastSeen, bugcheck, null, boot.TimeLocal, stateIsFromThisBoot);
         }
 
         var stop = events.FirstOrDefault(e => e.Provider == "EventLog" && e.Id == 6006 && e.TimeLocal < boot.TimeLocal);
         if (stop is null)
         {
-            return Build(ShutdownKind.Unknown, null, null, null);
+            return Build(ShutdownKind.Unknown, null, null, null, boot.TimeLocal, stateIsFromThisBoot);
         }
 
-        return Build(ShutdownKind.Clean, stop.TimeLocal, null, DescribeInitiator(events, stop));
+        return Build(ShutdownKind.Clean, stop.TimeLocal, null, DescribeInitiator(events, stop), boot.TimeLocal, stateIsFromThisBoot);
     }
 
-    private PreviousShutdownInfo Build(ShutdownKind kind, DateTime? when, uint? bugcheck, string? detail) =>
-        new(kind, when, bugcheck, detail, _upsOptions.Enabled ? _state.Previous?.Ups : null);
+    private PreviousShutdownInfo Build(ShutdownKind kind, DateTime? when, uint? bugcheck, string? detail, DateTime? bootTime, bool stateIsFromThisBoot = false) =>
+        new(kind, when, bugcheck, detail, _upsOptions.Enabled && !stateIsFromThisBoot ? _state.Previous?.Ups : null, bootTime);
 
     /// <summary>
     /// The earliest 1074 shortly before the log service stopped is the request that started the

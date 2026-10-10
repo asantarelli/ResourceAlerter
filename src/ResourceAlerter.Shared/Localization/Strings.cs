@@ -65,6 +65,7 @@ public static class Strings
         "Network" => IsEs ? "Red" : "Network",
         "SqlServer" => "SQL Server",
         "Ups" => "UPS",
+        "System" => IsEs ? "Sistema" : "System",
         _ => internalName,
     };
 
@@ -321,6 +322,36 @@ public static class Strings
     public static string Log_PreviousShutdownFailed => T(
         "No se pudo analizar cómo terminó la sesión anterior", "Could not analyze how the previous session ended");
 
+    // ---- Shutdown events recorded in the alert history (so the daily summary lists them) ----
+    /// <summary>Fixed/English keys of the pseudo-monitor these events are filed under — see <see cref="Memory_SubjectKey"/> for why.</summary>
+    public const string ShutdownMonitorKey = "System";
+    public const string ShutdownSubjectKey = "Shutdown";
+    public static string Shutdown_Subject => T("Apagado del equipo", "Machine shutdown");
+
+    public static string ShutdownEvent_Unclean => T(
+        "Equipo apagado de golpe (corte de energía, reinicio forzado o falla)",
+        "Machine stopped abruptly (power cut, forced reset or failure)");
+    public static string ShutdownEvent_Bugcheck(uint code) => T(
+        $"Equipo detenido por una pantalla azul (código 0x{code:X})",
+        $"Machine stopped by a blue screen (code 0x{code:X})");
+    public static string ShutdownEvent_OnBatterySuffix(int? percent) => percent is { } p
+        ? T($", con la UPS en batería ({p}%)", $", with the UPS on battery ({p}%)")
+        : T(", con la UPS en batería", ", with the UPS on battery");
+    public static string ShutdownEvent_LowBattery(int? percent) => percent is { } p
+        ? T($"Equipo apagado de forma ordenada por batería baja (UPS en batería, {p}%)", $"Machine shut down in an orderly way on low battery (UPS on battery, {p}%)")
+        : T("Equipo apagado de forma ordenada por batería baja (UPS en batería)", "Machine shut down in an orderly way on low battery (UPS on battery)");
+
+    public static string Log_GetLastSampleFailed => T(
+        "No se pudo leer la hora del último dato registrado", "Could not read the time of the last recorded reading");
+    public static string Log_CloseOrphanedEventsFailed => T(
+        "No se pudieron cerrar los eventos de alerta que quedaron abiertos", "Could not close the alert events left open");
+    public static string Log_ClosedOrphanedEvents => T(
+        "Se cerraron {Count} evento(s) de alerta que quedaron abiertos cuando el servicio se detuvo (hora de cierre: último dato registrado)",
+        "Closed {Count} alert event(s) left open when the service stopped (closing time: last recorded reading)");
+    public static string Log_ShutdownEventRecorded => T(
+        "Cierre anterior registrado en el historial de alertas: {Description}",
+        "Previous shutdown recorded in the alert history: {Description}");
+
     // ---- Previous shutdown report (startup notification) ----
     public static string Startup_PreviousShutdownHeader => T("Cierre anterior del equipo:", "Previous shutdown:");
 
@@ -435,6 +466,7 @@ public static class Strings
             ("SqlServer", SqlServer_LogSpaceSubjectKey) => SqlServer_LogSpace,
             ("Ups", Ups_PowerSubjectKey) => Ups_Power,
             ("Ups", Ups_BatterySubjectKey) => Ups_Battery,
+            (ShutdownMonitorKey, ShutdownSubjectKey) => Shutdown_Subject,
             _ => subjectKey, // per-database Log Space subjects use the DB name directly, like Disk's drive letters
         };
 

@@ -235,6 +235,112 @@ public sealed class DataRecorder : IDisposable
         }
     }
 
+    /// <summary>
+    /// When the service last wrote a reading — the best available answer to "when did this
+    /// machine/service stop?" after a restart. Null if nothing was ever recorded.
+    /// </summary>
+    public DateTimeOffset? GetLastSampleTime()
+    {
+        if (_connection is null)
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            try
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT MAX(Timestamp) FROM Samples";
+                return cmd.ExecuteScalar() is long seconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, Strings.Log_GetLastSampleFailed);
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Closes every alert event still open from a previous run of the service. An alert that was
+    /// active when the service stopped (a power cut is the typical case) can never be resolved by
+    /// the new run, whose trackers start with no memory of it — left open it would be reported as
+    /// "STILL ACTIVE" by every daily summary until the retention purge, and swallow the next real
+    /// event's "resolved" bookkeeping. It is closed at the last reading the service recorded, i.e.
+    /// when monitoring actually stopped; if the condition persists, the new run raises a fresh
+    /// event after its sustained window. Must run before the new run records its first sample.
+    /// </summary>
+    /// <returns>How many events were closed.</returns>
+    public int CloseOrphanedAlertEvents()
+    {
+        if (_connection is null)
+        {
+            return 0;
+        }
+
+        lock (_gate)
+        {
+            try
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = """
+                    UPDATE AlertEvents
+                    SET ResolvedAt = MAX(StartedAt, COALESCE((SELECT MAX(Timestamp) FROM Samples), StartedAt))
+                    WHERE ResolvedAt IS NULL
+                    """;
+                return cmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, Strings.Log_CloseOrphanedEventsFailed);
+                return 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records an event whose start and end are both already known (e.g. the machine was down from
+    /// X to Y), so it shows up in the daily summary like any alert. Idempotent per (monitor,
+    /// subject, END): recording the same event twice — say the service is restarted again shortly
+    /// after boot — leaves a single row. The end is the key, not the start, because the start is
+    /// "last time we were alive", which moves forward on every restart, while the end (when the
+    /// machine came back) is fixed.
+    /// </summary>
+    public void RecordClosedAlertEvent(string monitor, string subject, DateTimeOffset startedAt, DateTimeOffset resolvedAt, string? detectedValue, string? threshold)
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            try
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = """
+                    INSERT INTO AlertEvents (Monitor, Subject, StartedAt, ResolvedAt, DetectedValue, Threshold)
+                    SELECT $mon, $sub, $start, $end, $val, $thr
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM AlertEvents WHERE Monitor = $mon AND Subject = $sub AND ResolvedAt = $end
+                    )
+                    """;
+                cmd.Parameters.AddWithValue("$mon", monitor);
+                cmd.Parameters.AddWithValue("$sub", subject);
+                cmd.Parameters.AddWithValue("$start", startedAt.ToUnixTimeSeconds());
+                cmd.Parameters.AddWithValue("$end", resolvedAt.ToUnixTimeSeconds());
+                cmd.Parameters.AddWithValue("$val", (object?)detectedValue ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("$thr", (object?)threshold ?? DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, Strings.Log_RecordAlertStartFailed, monitor, subject);
+            }
+        }
+    }
+
     public IReadOnlyList<(string Monitor, string Subject, string? Unit)> GetSeries()
     {
         if (_connection is null)

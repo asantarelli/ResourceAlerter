@@ -32,7 +32,10 @@ for sensors.
   sensor coverage without having to dig through logs. On the first start after a boot it also
   says **how the previous shutdown ended** — orderly (and who/why), abrupt (power cut, forced
   reset, blue screen with its code), and, if a UPS is monitored, whether the machine was
-  running on battery when it stopped — with a warning subject when it wasn't clean.
+  running on battery when it stopped — with a warning subject when it wasn't clean. Abrupt
+  shutdowns (and orderly ones forced by an empty UPS battery) are also filed in the alert
+  history, so the **daily summary** lists them with their duration; alerts left open when the
+  service stopped are closed at the next start instead of lingering as "still active".
 - **UPS monitoring** (no vendor software): a UPS connected by USB is exposed by Windows as a
   battery, so ResourceAlerter alerts on power cuts and on low charge while running on
   battery. `ResourceAlerter.exe --test-ups` shows what Windows sees on a given machine.

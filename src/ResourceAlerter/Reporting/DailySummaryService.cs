@@ -165,8 +165,10 @@ public sealed class DailySummaryService
                     : FormatDuration(alert.ResolvedAt.Value - alert.StartedAt);
                 var monitorDisplay = Strings.MonitorDisplayName(alert.Monitor);
                 var subjectDisplay = Strings.SubjectDisplayName(alert.Monitor, alert.Subject);
+                // Shutdown events have no threshold to show (nothing was "out of range").
+                var thresholdText = string.IsNullOrWhiteSpace(alert.Threshold) ? "" : $" ({Strings.Word_Threshold} {alert.Threshold})";
                 sb.AppendLine($"  - {alert.StartedAt.LocalDateTime:HH:mm:ss} {monitorDisplay}/{subjectDisplay}: " +
-                              $"{alert.DetectedValue} ({Strings.Word_Threshold} {alert.Threshold}) — {duration}");
+                              $"{alert.DetectedValue}{thresholdText} — {duration}");
             }
         }
 

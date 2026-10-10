@@ -79,6 +79,7 @@ public sealed class Worker : BackgroundService
         // Must run before the first probe: that is what starts overwriting the runtime state the
         // analysis reads (although RuntimeStateStore.Previous is already captured at construction).
         var previousShutdown = AnalyzePreviousShutdown();
+        SettlePreviousSession(previousShutdown);
 
         // Probe once up front so the startup mail can report exactly what's actually being
         // watched on this machine (and what got skipped for lack of a sensor), then feed those
@@ -101,6 +102,57 @@ public sealed class Worker : BackgroundService
         {
             // Normal shutdown.
         }
+    }
+
+    /// <summary>
+    /// Bookkeeping for the session that just ended, in the alert history (which is what the daily
+    /// summary reads): first close the alert events it left open, then — if it ended badly —
+    /// file the shutdown itself as an event spanning "last alive" to "machine back up", so the
+    /// summary shows what happened and how long the machine was out. Order matters: the last
+    /// recorded reading is both the closing time for orphans and the start of the outage, and this
+    /// must run before this session records its first sample.
+    /// </summary>
+    private void SettlePreviousSession(PreviousShutdownInfo? previousShutdown)
+    {
+        var lastAlive = _dataRecorder.GetLastSampleTime();
+
+        var closed = _dataRecorder.CloseOrphanedAlertEvents();
+        if (closed > 0)
+        {
+            _logger.LogInformation(Strings.Log_ClosedOrphanedEvents, closed);
+        }
+
+        var description = previousShutdown?.HistoryDescription();
+        if (previousShutdown is null || description is null)
+        {
+            return;
+        }
+
+        // Second line of defence for "first start since boot": if readings were recorded after the
+        // machine came back up, this service already ran in this boot session and the shutdown was
+        // filed back then (the analyzer normally returns null here already; this also covers a
+        // missing runtime-state file, e.g. right after upgrading from a version that didn't write it).
+        if (lastAlive is { } alive && previousShutdown.BootTime is { } booted && alive > new DateTimeOffset(booted))
+        {
+            return;
+        }
+
+        DateTimeOffset? shutdownAt = previousShutdown.When is { } w ? new DateTimeOffset(w) : null;
+        var startedAt = (shutdownAt, lastAlive) switch
+        {
+            ({ } a, { } b) => a > b ? a : b, // the later of the two is closer to the real moment
+            ({ } a, null) => a,
+            (null, { } b) => b,
+            _ => previousShutdown.BootTime is { } boot ? new DateTimeOffset(boot) : DateTimeOffset.Now,
+        };
+        var resolvedAt = previousShutdown.BootTime is { } bootTime ? new DateTimeOffset(bootTime) : DateTimeOffset.Now;
+        if (resolvedAt < startedAt)
+        {
+            resolvedAt = startedAt;
+        }
+
+        _dataRecorder.RecordClosedAlertEvent(Strings.ShutdownMonitorKey, Strings.ShutdownSubjectKey, startedAt, resolvedAt, description, null);
+        _logger.LogInformation(Strings.Log_ShutdownEventRecorded, description);
     }
 
     private PreviousShutdownInfo? AnalyzePreviousShutdown()

@@ -311,6 +311,24 @@ Esa sección solo aparece en el **primer arranque del servicio después de encen
 solo reiniciás el servicio, no hay ningún apagado para informar. `--test-ups` muestra el mismo
 análisis del último apagado en cualquier momento.
 
+**También queda en el resumen diario.** Un apagado abrupto, o un apagado ordenado forzado por la
+batería de la UPS (el final de un corte de energía largo), se agrega a la lista "Alertas en las
+últimas 24 horas" como `Sistema/Apagado del equipo`, con la descripción y la duración: desde el
+último registro de actividad hasta que el equipo volvió a arrancar. Por ejemplo:
+
+```
+12:10:05 Sistema/Apagado del equipo: Equipo apagado de golpe (corte de energía, reinicio forzado
+         o falla), con la UPS en batería (12%) — 19m 0s
+```
+
+Un apagado ordenado común (alguien apagó el equipo) **no** se registra ahí, para no llenar el
+resumen de avisos sin importancia; igual figura en el aviso de arranque.
+
+**Alertas que quedan abiertas.** Si una alerta estaba activa cuando el servicio se detuvo (lo típico
+en un corte de energía), al volver a arrancar se cierra con la hora del último dato registrado. Antes
+de esta versión quedaba como "SIGUE ACTIVA" en todos los resúmenes siguientes hasta que se purgaba
+por retención. Si la condición sigue presente, el servicio genera una alerta nueva.
+
 ---
 
 ## Base de datos
